@@ -1,7 +1,8 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { NovoEventoDialog } from "@/components/NovoEventoDialog";
 
 const diasSemana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -55,9 +56,7 @@ const Agenda = () => {
                 </button>
               ))}
             </div>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" /> Novo Evento
-            </Button>
+            <NovoEventoDialog />
           </div>
         </div>
 

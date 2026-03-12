@@ -1,8 +1,9 @@
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Filter, Eye, Edit, CheckCircle2, Archive, Trash2 } from "lucide-react";
+import { Search, Eye, Edit, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { NovoProcessoDialog } from "@/components/NovoProcessoDialog";
 
 const processos = [
   { id: 1, nome: "Silva vs. Santos Ltda", numero: "0001234-56.2024.8.26.0100", cliente: "João Silva", partes: "Silva / Santos Ltda", responsavel: "Dr. Oliveira", status: "ativo" as const, tribunal: "TJSP", atualizado: "12/03/2026" },
@@ -31,9 +32,7 @@ const Processos = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Processos</h1>
             <p className="text-muted-foreground text-sm mt-1">Gerencie todos os processos do escritório</p>
           </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" /> Novo Processo
-          </Button>
+          <NovoProcessoDialog />
         </div>
 
         {/* Filters */}

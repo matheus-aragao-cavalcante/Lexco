@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { User, Bell, Palette, Building2, ShieldCheck, Puzzle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const tabs = [
   { id: "perfil", label: "Perfil", icon: User },
@@ -98,35 +98,8 @@ const Configuracoes = () => {
               </div>
             )}
 
-            {activeTab === "aparencia" && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-heading font-semibold text-foreground">Aparência</h2>
-                <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">Tema da interface</p>
-                  <div className="flex gap-3">
-                    <div className="p-4 rounded-lg border-2 border-primary bg-card cursor-pointer text-center">
-                      <div className="h-8 w-16 rounded bg-background border mb-2 mx-auto" />
-                      <span className="text-xs font-medium text-foreground">Claro</span>
-                    </div>
-                    <div className="p-4 rounded-lg border border-border bg-card cursor-pointer text-center opacity-50">
-                      <div className="h-8 w-16 rounded bg-foreground mb-2 mx-auto" />
-                      <span className="text-xs font-medium text-muted-foreground">Escuro</span>
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Cores do sistema</p>
-                  <div className="flex gap-3">
-                    <div className="flex items-center gap-2 p-3 rounded-lg border border-border">
-                      <div className="h-6 w-6 rounded-full bg-primary" />
-                      <span className="text-sm text-foreground">Laranja Principal</span>
-                    </div>
-                    <div className="flex items-center gap-2 p-3 rounded-lg border border-border">
-                      <div className="h-6 w-6 rounded-full bg-success" />
-                      <span className="text-sm text-foreground">Verde Sucesso</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeTab === "aparencia" && <AparenciaTab />}
+
 
             {activeTab === "organizacao" && (
               <div className="space-y-6">
@@ -188,5 +161,52 @@ const Configuracoes = () => {
     </AppLayout>
   );
 };
+
+function AparenciaTab() {
+  const [theme, setTheme] = useState(() => {
+    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  });
+
+  const toggleTheme = (newTheme: string) => {
+    setTheme(newTheme);
+    if (newTheme === "dark") {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-heading font-semibold text-foreground">Aparência</h2>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">Tema da interface</p>
+        <div className="flex gap-3">
+          <button onClick={() => toggleTheme("light")} className={`p-4 rounded-lg border-2 bg-card cursor-pointer text-center transition-colors ${theme === "light" ? "border-primary" : "border-border"}`}>
+            <div className="h-8 w-16 rounded bg-background border mb-2 mx-auto" />
+            <span className="text-xs font-medium text-foreground">Claro</span>
+          </button>
+          <button onClick={() => toggleTheme("dark")} className={`p-4 rounded-lg border-2 bg-card cursor-pointer text-center transition-colors ${theme === "dark" ? "border-primary" : "border-border"}`}>
+            <div className="h-8 w-16 rounded bg-foreground mb-2 mx-auto" />
+            <span className="text-xs font-medium text-foreground">Escuro</span>
+          </button>
+        </div>
+        <p className="text-sm text-muted-foreground">Cores do sistema</p>
+        <div className="flex gap-3">
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-border">
+            <div className="h-6 w-6 rounded-full bg-primary" />
+            <span className="text-sm text-foreground">Laranja Principal</span>
+          </div>
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-border">
+            <div className="h-6 w-6 rounded-full bg-success" />
+            <span className="text-sm text-foreground">Verde Sucesso</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default Configuracoes;
