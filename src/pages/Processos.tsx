@@ -1,8 +1,9 @@
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Filter, Eye, Edit, CheckCircle2, Archive, Trash2 } from "lucide-react";
+import { Search, Eye, Edit, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { NovoProcessoDialog } from "@/components/NovoProcessoDialog";
 
 const processos = [
   { id: 1, nome: "Silva vs. Santos Ltda", numero: "0001234-56.2024.8.26.0100", cliente: "João Silva", partes: "Silva / Santos Ltda", responsavel: "Dr. Oliveira", status: "ativo" as const, tribunal: "TJSP", atualizado: "12/03/2026" },
