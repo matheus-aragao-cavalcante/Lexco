@@ -1,8 +1,9 @@
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Eye, Edit, UserX, Shield } from "lucide-react";
+import { Search, Eye, Edit, Shield } from "lucide-react";
 import { useState } from "react";
+import { NovoUsuarioDialog } from "@/components/NovoUsuarioDialog";
 
 const usuarios = [
   { id: 1, nome: "Dr. Carlos Oliveira", email: "oliveira@lexcontrol.com", cargo: "Advogado Sênior", perfil: "admin", status: "ativo" as const, processos: 28, cadastro: "15/01/2024" },
