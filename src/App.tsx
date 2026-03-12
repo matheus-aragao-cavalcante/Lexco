@@ -14,6 +14,12 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Initialize theme from localStorage
+const savedTheme = localStorage.getItem("theme");
+if (savedTheme === "dark") {
+  document.documentElement.classList.add("dark");
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
