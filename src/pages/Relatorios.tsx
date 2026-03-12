@@ -50,7 +50,12 @@ const Relatorios = () => (
             <option>Últimos 6 meses</option>
             <option>Último ano</option>
           </select>
-          <button className="h-9 px-4 rounded-lg border border-input bg-card text-sm text-foreground hover:bg-muted transition-colors">
+          <button
+            onClick={() => {
+              window.print();
+            }}
+            className="h-9 px-4 rounded-lg border border-input bg-card text-sm text-foreground hover:bg-muted transition-colors"
+          >
             Exportar PDF
           </button>
         </div>

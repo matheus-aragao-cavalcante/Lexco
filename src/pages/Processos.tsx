@@ -32,9 +32,7 @@ const Processos = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Processos</h1>
             <p className="text-muted-foreground text-sm mt-1">Gerencie todos os processos do escritório</p>
           </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" /> Novo Processo
-          </Button>
+          <NovoProcessoDialog />
         </div>
 
         {/* Filters */}

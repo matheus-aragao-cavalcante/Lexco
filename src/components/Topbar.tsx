@@ -1,29 +1,27 @@
-import { cn } from "@/lib/utils";
-import { Search, Bell, ChevronDown, User, LogOut, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, ChevronDown, User, LogOut, Settings } from "lucide-react";
 import { useState } from "react";
+import { NotificationsPanel } from "@/components/NotificationsPanel";
+import { SearchDialog } from "@/components/SearchDialog";
 
 export function Topbar() {
   const [showMenu, setShowMenu] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <header className="h-16 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-30">
       <div className="flex items-center gap-3 flex-1 max-w-md">
-        <div className="relative w-full">
+        <div className="relative w-full cursor-pointer" onClick={() => setSearchOpen(true)}>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar processos, prazos, clientes..."
-            className="w-full h-9 pl-9 pr-4 rounded-lg border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+          <div className="w-full h-9 pl-9 pr-4 rounded-lg border border-input bg-background text-sm text-muted-foreground flex items-center">
+            Buscar processos, prazos, clientes...
+          </div>
         </div>
       </div>
 
+      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5 text-muted-foreground" />
-          <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center">3</span>
-        </Button>
+        <NotificationsPanel />
 
         <div className="relative">
           <button

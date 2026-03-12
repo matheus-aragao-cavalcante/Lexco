@@ -31,9 +31,7 @@ const Prazos = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Prazos</h1>
             <p className="text-muted-foreground text-sm mt-1">Controle de prazos jurídicos</p>
           </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" /> Novo Prazo
-          </Button>
+          <NovoPrazoDialog />
         </div>
 
         {/* KPIs */}

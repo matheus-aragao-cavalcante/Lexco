@@ -34,9 +34,7 @@ const Usuarios = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Usuários</h1>
             <p className="text-muted-foreground text-sm mt-1">Gestão de advogados e colaboradores</p>
           </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" /> Novo Usuário
-          </Button>
+          <NovoUsuarioDialog />
         </div>
 
         <div className="relative max-w-sm">
