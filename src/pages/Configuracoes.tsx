@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { User, Bell, Palette, Building2, ShieldCheck, Puzzle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const tabs = [
   { id: "perfil", label: "Perfil", icon: User },
