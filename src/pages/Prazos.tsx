@@ -2,8 +2,9 @@ import { AppLayout } from "@/components/AppLayout";
 import { KPICard } from "@/components/KPICard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Plus, Clock, AlertTriangle, CheckCircle2, CalendarDays, List, Timer } from "lucide-react";
+import { Clock, AlertTriangle, CheckCircle2, CalendarDays, List, Timer } from "lucide-react";
 import { useState } from "react";
+import { NovoPrazoDialog } from "@/components/NovoPrazoDialog";
 
 const prazos = [
   { id: 1, titulo: "Contestação - Silva vs Santos", processo: "0001234-56.2024", cliente: "João Silva", responsavel: "Dr. Oliveira", dataLimite: "12/03/2026", status: "urgente" as const, prioridade: "Alta" },
