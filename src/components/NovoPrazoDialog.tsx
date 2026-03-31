@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-export function NovoPrazoDialog() {
+export function NovoPrazoDialog({ processoId, onSaved }: { processoId?: string; onSaved?: () => void } = {}) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     titulo: "", descricao: "", processo: "", responsavel: "", dataLimite: "", hora: "", status: "pendente", observacao: "",
