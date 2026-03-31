@@ -2,31 +2,42 @@ import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
-  FolderOpen,
-  Clock,
-  CalendarDays,
-  BarChart3,
-  Users,
-  Settings,
-  Scale,
-  ChevronLeft,
+  LayoutDashboard, FolderOpen, Clock, CalendarDays, BarChart3,
+  Users, Settings, Scale, ChevronLeft, Sun, Moon, UserCircle, UsersRound,
 } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Processos", url: "/processos", icon: FolderOpen },
   { title: "Prazos", url: "/prazos", icon: Clock },
   { title: "Agenda", url: "/agenda", icon: CalendarDays },
+  { title: "Partes", url: "/partes", icon: UsersRound },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   { title: "Usuários", url: "/usuarios", icon: Users },
-  { title: "Configurações", url: "/configuracoes", icon: Settings },
+  { title: "Meu Perfil", url: "/perfil", icon: UserCircle },
 ];
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const { currentUser, updateUser } = useAuth();
+
+  const isDark = document.documentElement.classList.contains("dark");
+
+  const toggleTheme = () => {
+    const newTheme = isDark ? "light" : "dark";
+    if (newTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+    localStorage.setItem("theme", newTheme);
+    if (currentUser) {
+      updateUser({ preferencias: { ...currentUser.preferencias, tema: newTheme } });
+    }
+  };
 
   return (
     <aside
@@ -74,8 +85,15 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Collapse toggle */}
-      <div className="p-2 border-t border-sidebar-border">
+      {/* Bottom: Theme + Collapse */}
+      <div className="p-2 border-t border-sidebar-border space-y-1">
+        <button
+          onClick={toggleTheme}
+          className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+        >
+          {isDark ? <Sun className="h-[18px] w-[18px] flex-shrink-0" /> : <Moon className="h-[18px] w-[18px] flex-shrink-0" />}
+          {!collapsed && <span>{isDark ? "Tema Claro" : "Tema Escuro"}</span>}
+        </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="w-full flex items-center justify-center rounded-lg py-2 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
