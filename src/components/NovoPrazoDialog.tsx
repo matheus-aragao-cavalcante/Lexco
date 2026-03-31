@@ -3,22 +3,32 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { db, addHistorico } from "@/lib/db";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function NovoPrazoDialog({ processoId, onSaved }: { processoId?: string; onSaved?: () => void } = {}) {
   const [open, setOpen] = useState(false);
+  const { currentUser } = useAuth();
   const [form, setForm] = useState({
-    titulo: "", descricao: "", processo: "", responsavel: "", dataLimite: "", hora: "", status: "pendente", observacao: "",
+    titulo: "", descricao: "", processo: processoId || "", responsavel: "", dataLimite: "", hora: "", status: "pendente", observacao: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.titulo || !form.dataLimite) {
-      toast.error("Preencha os campos obrigatórios");
-      return;
-    }
+    if (!form.titulo || !form.dataLimite) { toast.error("Preencha os campos obrigatórios"); return; }
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await db.prazos.add({
+      id, titulo: form.titulo, descricao: form.descricao, processoId: form.processo || processoId,
+      responsavelId: form.responsavel || currentUser?.id, dataLimite: form.dataLimite, hora: form.hora,
+      status: "pendente", prioridade: "Normal", observacao: form.observacao,
+      criadoPor: currentUser?.id || "", criadoEm: now, atualizadoEm: now,
+    });
+    await addHistorico(id, "prazo", "criacao", `Prazo "${form.titulo}" criado`, currentUser?.id || "", currentUser?.nome || "");
     toast.success("Prazo criado com sucesso!");
-    setForm({ titulo: "", descricao: "", processo: "", responsavel: "", dataLimite: "", hora: "", status: "pendente", observacao: "" });
+    setForm({ titulo: "", descricao: "", processo: processoId || "", responsavel: "", dataLimite: "", hora: "", status: "pendente", observacao: "" });
     setOpen(false);
+    onSaved?.();
   };
 
   return (
@@ -27,22 +37,12 @@ export function NovoPrazoDialog({ processoId, onSaved }: { processoId?: string; 
         <Button className="gap-2"><Plus className="h-4 w-4" /> Novo Prazo</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-heading">Novo Prazo</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle className="font-heading">Novo Prazo</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2 space-y-1.5">
               <label className="text-sm text-muted-foreground">Título *</label>
               <input value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">Processo Vinculado</label>
-              <input value={form.processo} onChange={(e) => setForm({ ...form, processo: e.target.value })} className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">Responsável</label>
-              <input value={form.responsavel} onChange={(e) => setForm({ ...form, responsavel: e.target.value })} className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm text-muted-foreground">Data Limite *</label>
