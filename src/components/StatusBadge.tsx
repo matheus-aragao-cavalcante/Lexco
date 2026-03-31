@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-type StatusType = "ativo" | "pendente" | "concluido" | "atrasado" | "cumprido" | "urgente" | "inativo";
+type StatusType = "ativo" | "pendente" | "concluido" | "atrasado" | "cumprido" | "urgente" | "inativo" | "arquivado" | "cancelado";
 
 interface StatusBadgeProps {
   status: StatusType;
