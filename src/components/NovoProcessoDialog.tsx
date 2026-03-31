@@ -1,57 +1,272 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
-import { useState } from "react";
+import { Plus, X } from "lucide-react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { db, addHistorico } from "@/lib/db";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  MODELOS_NOMENCLATURA, AREAS_DIREITO, STATUS_PROCESSO, PRIORIDADES,
+  ESFERAS, TIPOS_ENVOLVIMENTO,
+  type ParteInteressada, type ModeloNomenclatura,
+} from "@/types";
 
-export function NovoProcessoDialog() {
+export function NovoProcessoDialog({ onSaved }: { onSaved?: () => void }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    nome: "", numero: "", cliente: "", partes: "", tribunal: "", vara: "", responsavel: "", status: "ativo", observacoes: "",
+  const { currentUser } = useAuth();
+  const [modelo, setModelo] = useState(MODELOS_NOMENCLATURA[0]);
+  const [customPoloAtivo, setCustomPoloAtivo] = useState("");
+  const [customPoloPassivo, setCustomPoloPassivo] = useState("");
+  const [form, setForm] = useState<Record<string, string>>({
+    status: "ativo", prioridade: "Normal", esfera: "Particular", modeloNomenclaturaId: "civel",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.nome || !form.numero || !form.cliente) {
-      toast.error("Preencha os campos obrigatórios");
-      return;
+  // Poles: partes linked to each pole
+  const [poloAtivoPartes, setPoloAtivoPartes] = useState<{ parteId: string; nome: string }[]>([]);
+  const [poloPassivoPartes, setPoloPassivoPartes] = useState<{ parteId: string; nome: string }[]>([]);
+  const [interessados, setInteressados] = useState<{ parteId: string; nome: string; tipo: string }[]>([]);
+
+  // Available parties for selection
+  const [partesDisponiveis, setPartesDisponiveis] = useState<ParteInteressada[]>([]);
+  const [users, setUsers] = useState<{ id: string; nome: string }[]>([]);
+
+  useEffect(() => {
+    if (open) {
+      db.partes.toArray().then(setPartesDisponiveis);
+      db.users.where("status").equals("ativo").toArray().then((u) => setUsers(u.map((x) => ({ id: x.id, nome: x.nome }))));
     }
-    toast.success("Processo criado com sucesso!");
-    setForm({ nome: "", numero: "", cliente: "", partes: "", tribunal: "", vara: "", responsavel: "", status: "ativo", observacoes: "" });
-    setOpen(false);
+  }, [open]);
+
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleModeloChange = (id: string) => {
+    const m = MODELOS_NOMENCLATURA.find((x) => x.id === id) || MODELOS_NOMENCLATURA[0];
+    setModelo(m);
+    set("modeloNomenclaturaId", id);
+    if (!m.custom) { setCustomPoloAtivo(""); setCustomPoloPassivo(""); }
   };
+
+  const addParteToList = (list: typeof poloAtivoPartes, setList: typeof setPoloAtivoPartes, parteId: string) => {
+    const p = partesDisponiveis.find((x) => x.id === parteId);
+    if (!p || list.some((x) => x.parteId === parteId)) return;
+    setList([...list, { parteId: p.id, nome: p.nome || p.razaoSocial || "" }]);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.titulo) { toast.error("Informe o título do processo"); return; }
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const labelAtivo = modelo.custom ? (customPoloAtivo || "Polo Ativo") : modelo.poloAtivo;
+    const labelPassivo = modelo.custom ? (customPoloPassivo || "Polo Passivo") : modelo.poloPassivo;
+
+    await db.processos.add({
+      id,
+      titulo: form.titulo,
+      numero: form.numero,
+      areaDireito: form.areaDireito,
+      subarea: form.subarea,
+      classeProcessual: form.classeProcessual,
+      assuntoPrincipal: form.assuntoPrincipal,
+      orgaoJulgador: form.orgaoJulgador,
+      comarca: form.comarca,
+      tribunal: form.tribunal,
+      vara: form.vara,
+      instancia: form.instancia,
+      esfera: form.esfera,
+      status: (form.status as any) || "ativo",
+      prioridade: form.prioridade,
+      dataDistribuicao: form.dataDistribuicao,
+      dataCadastro: now,
+      responsavelId: form.responsavelId || currentUser?.id || "",
+      equipeIds: [],
+      objetoAcao: form.objetoAcao,
+      resumoCaso: form.resumoCaso,
+      observacoes: form.observacoes,
+      tags: [],
+      modeloNomenclaturaId: form.modeloNomenclaturaId,
+      labelPoloAtivo: labelAtivo,
+      labelPoloPassivo: labelPassivo,
+      criadoPor: currentUser?.id || "",
+      atualizadoEm: now,
+      atualizadoPor: currentUser?.id || "",
+    });
+
+    // Create vinculos
+    for (const p of poloAtivoPartes) {
+      await db.vinculos.add({ id: crypto.randomUUID(), processoId: id, parteId: p.parteId, tipoEnvolvimento: labelAtivo });
+    }
+    for (const p of poloPassivoPartes) {
+      await db.vinculos.add({ id: crypto.randomUUID(), processoId: id, parteId: p.parteId, tipoEnvolvimento: labelPassivo });
+    }
+    for (const p of interessados) {
+      await db.vinculos.add({ id: crypto.randomUUID(), processoId: id, parteId: p.parteId, tipoEnvolvimento: p.tipo });
+    }
+
+    await addHistorico(id, "processo", "criacao", `Processo "${form.titulo}" criado`, currentUser?.id || "", currentUser?.nome || "");
+    toast.success("Processo criado com sucesso!");
+
+    // Reset
+    setForm({ status: "ativo", prioridade: "Normal", esfera: "Particular", modeloNomenclaturaId: "civel" });
+    setPoloAtivoPartes([]);
+    setPoloPassivoPartes([]);
+    setInteressados([]);
+    setModelo(MODELOS_NOMENCLATURA[0]);
+    setOpen(false);
+    onSaved?.();
+  };
+
+  const inputCls = "w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="gap-2"><Plus className="h-4 w-4" /> Novo Processo</Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-heading">Novo Processo</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Nome / Descrição *" value={form.nome} onChange={(v) => setForm({ ...form, nome: v })} />
-            <Field label="Número do Processo *" value={form.numero} onChange={(v) => setForm({ ...form, numero: v })} placeholder="0000000-00.0000.0.00.0000" />
-            <Field label="Cliente *" value={form.cliente} onChange={(v) => setForm({ ...form, cliente: v })} />
-            <Field label="Partes Envolvidas" value={form.partes} onChange={(v) => setForm({ ...form, partes: v })} />
-            <Field label="Tribunal" value={form.tribunal} onChange={(v) => setForm({ ...form, tribunal: v })} />
-            <Field label="Vara" value={form.vara} onChange={(v) => setForm({ ...form, vara: v })} />
-            <Field label="Advogado Responsável" value={form.responsavel} onChange={(v) => setForm({ ...form, responsavel: v })} />
+        <form onSubmit={handleSubmit} className="space-y-6 mt-2">
+          {/* Section: Dados Gerais */}
+          <fieldset className="space-y-4">
+            <legend className="text-sm font-semibold text-foreground border-b border-border pb-2 w-full">Dados Gerais</legend>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2 space-y-1.5">
+                <label className="text-sm text-muted-foreground">Título / Nome do Processo *</label>
+                <input value={form.titulo || ""} onChange={(e) => set("titulo", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Número do Processo</label>
+                <input value={form.numero || ""} onChange={(e) => set("numero", e.target.value)} placeholder="0000000-00.0000.0.00.0000" className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Área do Direito</label>
+                <select value={form.areaDireito || ""} onChange={(e) => set("areaDireito", e.target.value)} className={inputCls}>
+                  <option value="">Selecionar</option>
+                  {AREAS_DIREITO.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Classe Processual</label>
+                <input value={form.classeProcessual || ""} onChange={(e) => set("classeProcessual", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Assunto Principal</label>
+                <input value={form.assuntoPrincipal || ""} onChange={(e) => set("assuntoPrincipal", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Órgão Julgador</label>
+                <input value={form.orgaoJulgador || ""} onChange={(e) => set("orgaoJulgador", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Comarca / Seção / Vara</label>
+                <input value={form.comarca || ""} onChange={(e) => set("comarca", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Tribunal / Órgão</label>
+                <input value={form.tribunal || ""} onChange={(e) => set("tribunal", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Instância</label>
+                <input value={form.instancia || ""} onChange={(e) => set("instancia", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Esfera</label>
+                <select value={form.esfera || ""} onChange={(e) => set("esfera", e.target.value)} className={inputCls}>
+                  {ESFERAS.map((e) => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Status</label>
+                <select value={form.status || "ativo"} onChange={(e) => set("status", e.target.value)} className={inputCls}>
+                  {STATUS_PROCESSO.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Prioridade</label>
+                <select value={form.prioridade || "Normal"} onChange={(e) => set("prioridade", e.target.value)} className={inputCls}>
+                  {PRIORIDADES.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Data de Distribuição</label>
+                <input type="date" value={form.dataDistribuicao || ""} onChange={(e) => set("dataDistribuicao", e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Responsável Principal</label>
+                <select value={form.responsavelId || ""} onChange={(e) => set("responsavelId", e.target.value)} className={inputCls}>
+                  <option value="">Selecionar</option>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                </select>
+              </div>
+            </div>
+          </fieldset>
+
+          {/* Section: Partes / Polos */}
+          <fieldset className="space-y-4">
+            <legend className="text-sm font-semibold text-foreground border-b border-border pb-2 w-full">Partes Envolvidas</legend>
+
+            {/* Modelo de nomenclatura */}
             <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">Status</label>
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
-                <option value="ativo">Ativo</option>
-                <option value="pendente">Pendente</option>
-                <option value="concluido">Concluído</option>
+              <label className="text-sm text-muted-foreground">Modelo de Nomenclatura</label>
+              <select value={modelo.id} onChange={(e) => handleModeloChange(e.target.value)} className={inputCls}>
+                {MODELOS_NOMENCLATURA.map((m) => <option key={m.id} value={m.id}>{m.nome} ({m.poloAtivo} / {m.poloPassivo})</option>)}
               </select>
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm text-muted-foreground">Observações</label>
-            <textarea value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} rows={3} className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
-          </div>
+
+            {modelo.custom && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm text-muted-foreground">Nome do Polo Ativo</label>
+                  <input value={customPoloAtivo} onChange={(e) => setCustomPoloAtivo(e.target.value)} placeholder="Ex: Autor" className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm text-muted-foreground">Nome do Polo Passivo</label>
+                  <input value={customPoloPassivo} onChange={(e) => setCustomPoloPassivo(e.target.value)} placeholder="Ex: Réu" className={inputCls} />
+                </div>
+              </div>
+            )}
+
+            {/* Polo Ativo */}
+            <PoloSection
+              label={modelo.custom ? (customPoloAtivo || "Polo Ativo") : modelo.poloAtivo}
+              items={poloAtivoPartes}
+              onRemove={(i) => setPoloAtivoPartes(poloAtivoPartes.filter((_, j) => j !== i))}
+              partesDisponiveis={partesDisponiveis}
+              onAdd={(id) => addParteToList(poloAtivoPartes, setPoloAtivoPartes, id)}
+            />
+
+            {/* Polo Passivo */}
+            <PoloSection
+              label={modelo.custom ? (customPoloPassivo || "Polo Passivo") : modelo.poloPassivo}
+              items={poloPassivoPartes}
+              onRemove={(i) => setPoloPassivoPartes(poloPassivoPartes.filter((_, j) => j !== i))}
+              partesDisponiveis={partesDisponiveis}
+              onAdd={(id) => addParteToList(poloPassivoPartes, setPoloPassivoPartes, id)}
+            />
+          </fieldset>
+
+          {/* Section: Informações Complementares */}
+          <fieldset className="space-y-4">
+            <legend className="text-sm font-semibold text-foreground border-b border-border pb-2 w-full">Informações Complementares</legend>
+            <div className="space-y-1.5">
+              <label className="text-sm text-muted-foreground">Objeto da Ação</label>
+              <textarea value={form.objetoAcao || ""} onChange={(e) => set("objetoAcao", e.target.value)} rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm text-muted-foreground">Resumo do Caso</label>
+              <textarea value={form.resumoCaso || ""} onChange={(e) => set("resumoCaso", e.target.value)} rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm text-muted-foreground">Observações</label>
+              <textarea value={form.observacoes || ""} onChange={(e) => set("observacoes", e.target.value)} rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+            </div>
+          </fieldset>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
             <Button type="submit">Criar Processo</Button>
@@ -62,11 +277,41 @@ export function NovoProcessoDialog() {
   );
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function PoloSection({ label, items, onRemove, partesDisponiveis, onAdd }: {
+  label: string;
+  items: { parteId: string; nome: string }[];
+  onRemove: (i: number) => void;
+  partesDisponiveis: ParteInteressada[];
+  onAdd: (id: string) => void;
+}) {
+  const [selectOpen, setSelectOpen] = useState(false);
+
   return (
-    <div className="space-y-1.5">
-      <label className="text-sm text-muted-foreground">{label}</label>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+    <div className="space-y-2 p-3 rounded-lg border border-border bg-muted/20">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => setSelectOpen(!selectOpen)}>
+          <Plus className="h-3 w-3 mr-1" /> Adicionar
+        </Button>
+      </div>
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-2 bg-card rounded px-3 py-1.5 text-sm">
+          <span className="flex-1 text-foreground">{item.nome}</span>
+          <button type="button" onClick={() => onRemove(i)} className="text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
+        </div>
+      ))}
+      {items.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma parte adicionada</p>}
+      {selectOpen && (
+        <select
+          onChange={(e) => { if (e.target.value) { onAdd(e.target.value); e.target.value = ""; } }}
+          className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">Selecionar parte cadastrada...</option>
+          {partesDisponiveis.map((p) => (
+            <option key={p.id} value={p.id}>{p.nome || p.razaoSocial} {p.cpfCnpj ? `(${p.cpfCnpj})` : ""}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }
