@@ -1,20 +1,23 @@
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Search, Eye, Edit, Trash2 } from "lucide-react";
+import { Search, Eye, Trash2, FolderOpen } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { NovoProcessoDialog } from "@/components/NovoProcessoDialog";
-import { db } from "@/lib/db";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { db, deleteProcessoCascata, contarDependenciasProcesso, addHistorico } from "@/lib/db";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Processo } from "@/types";
 import { toast } from "sonner";
-import { FolderOpen } from "lucide-react";
 
 const Processos = () => {
   const [processos, setProcessos] = useState<Processo[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [search, setSearch] = useState("");
+  const [confirmDel, setConfirmDel] = useState<{ id: string; titulo: string; deps: string } | null>(null);
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
 
   const load = async () => { setProcessos(await db.processos.toArray()); };
   useEffect(() => { load(); }, []);
@@ -26,12 +29,28 @@ const Processos = () => {
     return matchesStatus && matchesSearch;
   });
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Excluir este processo?")) return;
-    await db.processos.delete(id);
-    await db.vinculos.where("processoId").equals(id).delete();
-    await db.prazos.where("processoId").equals(id).delete();
-    toast.success("Processo excluído");
+  const askDelete = async (p: Processo) => {
+    const d = await contarDependenciasProcesso(p.id);
+    const parts: string[] = [];
+    if (d.prazos) parts.push(`${d.prazos} prazo(s)`);
+    if (d.eventos) parts.push(`${d.eventos} evento(s)`);
+    if (d.arquivos) parts.push(`${d.arquivos} arquivo(s)`);
+    if (d.vinculos) parts.push(`${d.vinculos} vínculo(s) com partes`);
+    if (d.historico) parts.push(`${d.historico} entrada(s) de histórico`);
+    setConfirmDel({
+      id: p.id, titulo: p.titulo,
+      deps: parts.length ? `Serão removidos também: ${parts.join(", ")}.` : "Nenhum dado vinculado será afetado.",
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDel) return;
+    await deleteProcessoCascata(confirmDel.id);
+    await addHistorico(confirmDel.id, "processo", "exclusao",
+      `Processo "${confirmDel.titulo}" excluído (cascata)`,
+      currentUser?.id || "", currentUser?.nome || "");
+    toast.success("Processo e dados vinculados excluídos");
+    setConfirmDel(null);
     load();
   };
 
@@ -87,7 +106,7 @@ const Processos = () => {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/processos/${p.id}`)}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => askDelete(p)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </td>
                   </tr>
@@ -103,6 +122,15 @@ const Processos = () => {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(o) => !o && setConfirmDel(null)}
+        title={`Excluir processo "${confirmDel?.titulo}"?`}
+        description={`Esta ação é irreversível.\n\n${confirmDel?.deps || ""}`}
+        confirmLabel="Excluir tudo"
+        onConfirm={handleConfirmDelete}
+      />
     </AppLayout>
   );
 };
