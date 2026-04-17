@@ -77,7 +77,7 @@ const PerfilUsuario = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `lexcontrol_export_${tipo}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `lexco_export_${tipo}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Exportação concluída!");
@@ -98,7 +98,7 @@ const PerfilUsuario = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `lexcontrol_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `lexco_backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Backup exportado!");

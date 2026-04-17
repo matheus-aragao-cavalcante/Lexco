@@ -46,7 +46,7 @@ const Login = () => {
           <div className="h-16 w-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4">
             <Scale className="h-8 w-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-heading font-bold text-foreground">LexControl</h1>
+          <h1 className="text-3xl font-heading font-bold text-foreground">Lexco</h1>
           <p className="text-muted-foreground mt-1">Sistema de Gestão Jurídica</p>
         </div>
 

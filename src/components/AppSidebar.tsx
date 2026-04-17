@@ -54,7 +54,7 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="animate-slide-in">
-              <h1 className="text-sm font-bold text-sidebar-accent-foreground tracking-tight">LexControl</h1>
+              <h1 className="text-sm font-bold text-sidebar-accent-foreground tracking-tight">Lexco</h1>
               <p className="text-[10px] text-sidebar-muted">Gestão Jurídica</p>
             </div>
           )}
