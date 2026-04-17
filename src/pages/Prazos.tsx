@@ -2,26 +2,85 @@ import { AppLayout } from "@/components/AppLayout";
 import { KPICard } from "@/components/KPICard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Clock, AlertTriangle, CheckCircle2, CalendarDays, List, Timer } from "lucide-react";
-import { useState } from "react";
-import { NovoPrazoDialog } from "@/components/NovoPrazoDialog";
-
-const prazos = [
-  { id: 1, titulo: "Contestação - Silva vs Santos", processo: "0001234-56.2024", cliente: "João Silva", responsavel: "Dr. Oliveira", dataLimite: "12/03/2026", status: "urgente" as const, prioridade: "Alta" },
-  { id: 2, titulo: "Recurso de Apelação", processo: "0005678-90.2024", cliente: "Empresa ABC", responsavel: "Dra. Costa", dataLimite: "12/03/2026", status: "urgente" as const, prioridade: "Alta" },
-  { id: 3, titulo: "Juntada de Documentos", processo: "0009012-34.2024", cliente: "Maria Pereira", responsavel: "Dr. Silva", dataLimite: "13/03/2026", status: "pendente" as const, prioridade: "Média" },
-  { id: 4, titulo: "Audiência de Conciliação", processo: "0003456-78.2024", cliente: "Carlos Martins", responsavel: "Dra. Lima", dataLimite: "13/03/2026", status: "pendente" as const, prioridade: "Média" },
-  { id: 5, titulo: "Petição Inicial", processo: "0007890-12.2024", cliente: "Pedro Rodrigues", responsavel: "Dr. Oliveira", dataLimite: "15/03/2026", status: "pendente" as const, prioridade: "Normal" },
-  { id: 6, titulo: "Parecer Jurídico", processo: "0002345-67.2024", cliente: "Omega Tech", responsavel: "Dra. Costa", dataLimite: "18/03/2026", status: "pendente" as const, prioridade: "Normal" },
-  { id: 7, titulo: "Laudo Pericial", processo: "0001234-56.2024", cliente: "João Silva", responsavel: "Dr. Silva", dataLimite: "10/03/2026", status: "atrasado" as const, prioridade: "Alta" },
-  { id: 8, titulo: "Entrega de Mandado", processo: "0005678-90.2024", cliente: "Empresa ABC", responsavel: "Dra. Lima", dataLimite: "05/03/2026", status: "cumprido" as const, prioridade: "Normal" },
-];
+import { Clock, AlertTriangle, CheckCircle2, CalendarDays, List, Timer, Plus, Pencil, Trash2, CheckCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { db, addHistorico } from "@/lib/db";
+import { useAuth } from "@/contexts/AuthContext";
+import { PrazoDialog } from "@/components/PrazoDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import type { Prazo, Processo, User } from "@/types";
+import { toast } from "sonner";
 
 const Prazos = () => {
+  const { currentUser } = useAuth();
   const [view, setView] = useState<"lista" | "timeline">("lista");
   const [statusFilter, setStatusFilter] = useState("todos");
+  const [prazos, setPrazos] = useState<Prazo[]>([]);
+  const [processos, setProcessos] = useState<Record<string, Processo>>({});
+  const [users, setUsers] = useState<Record<string, User>>({});
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Prazo | null>(null);
+  const [confirmDel, setConfirmDel] = useState<Prazo | null>(null);
+
+  const load = async () => {
+    const [ps, procs, us] = await Promise.all([
+      db.prazos.toArray(), db.processos.toArray(), db.users.toArray(),
+    ]);
+    setPrazos(ps.sort((a, b) => a.dataLimite.localeCompare(b.dataLimite)));
+    setProcessos(Object.fromEntries(procs.map((p) => [p.id, p])));
+    setUsers(Object.fromEntries(us.map((u) => [u.id, u])));
+  };
+  useEffect(() => { load(); }, []);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+  const kpis = useMemo(() => ({
+    hoje: prazos.filter((p) => p.dataLimite === today && p.status !== "cumprido").length,
+    amanha: prazos.filter((p) => p.dataLimite === tomorrow && p.status !== "cumprido").length,
+    semana: prazos.filter((p) => p.dataLimite >= today && p.dataLimite <= in7 && p.status !== "cumprido").length,
+    atrasados: prazos.filter((p) => p.dataLimite < today && p.status !== "cumprido").length,
+    cumpridos: prazos.filter((p) => p.status === "cumprido").length,
+  }), [prazos, today, tomorrow, in7]);
 
   const filtered = prazos.filter((p) => statusFilter === "todos" || p.status === statusFilter);
+
+  const handleEdit = (p: Prazo) => { setEditing(p); setDialogOpen(true); };
+  const handleNew = () => { setEditing(null); setDialogOpen(true); };
+
+  const handleConcluir = async (p: Prazo) => {
+    await db.prazos.put({ ...p, status: "cumprido", atualizadoEm: new Date().toISOString() });
+    await addHistorico(p.id, "prazo", "concluido", `Prazo "${p.titulo}" marcado como cumprido`,
+      currentUser?.id || "", currentUser?.nome || "");
+    if (p.processoId) {
+      await addHistorico(p.processoId, "processo", "prazo_concluido",
+        `Prazo "${p.titulo}" marcado como cumprido`, currentUser?.id || "", currentUser?.nome || "");
+    }
+    toast.success("Prazo cumprido!");
+    load();
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDel) return;
+    await db.prazos.delete(confirmDel.id);
+    await addHistorico(confirmDel.id, "prazo", "exclusao",
+      `Prazo "${confirmDel.titulo}" excluído`, currentUser?.id || "", currentUser?.nome || "");
+    if (confirmDel.processoId) {
+      await addHistorico(confirmDel.processoId, "processo", "prazo_excluido",
+        `Prazo "${confirmDel.titulo}" excluído`, currentUser?.id || "", currentUser?.nome || "");
+    }
+    toast.success("Prazo excluído");
+    setConfirmDel(null);
+    load();
+  };
+
+  const formatDate = (d: string) => {
+    if (!d) return "—";
+    const [y, m, dd] = d.split("-");
+    return `${dd}/${m}/${y}`;
+  };
 
   return (
     <AppLayout>
@@ -31,19 +90,17 @@ const Prazos = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Prazos</h1>
             <p className="text-muted-foreground text-sm mt-1">Controle de prazos jurídicos</p>
           </div>
-          <NovoPrazoDialog />
+          <Button className="gap-2" onClick={handleNew}><Plus className="h-4 w-4" /> Novo Prazo</Button>
         </div>
 
-        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <KPICard title="Hoje" value={2} icon={Clock} variant="warning" />
-          <KPICard title="Amanhã" value={2} icon={CalendarDays} variant="primary" />
-          <KPICard title="Esta Semana" value={6} icon={Timer} variant="default" />
-          <KPICard title="Atrasados" value={1} icon={AlertTriangle} variant="destructive" />
-          <KPICard title="Cumpridos" value={1} icon={CheckCircle2} variant="success" />
+          <KPICard title="Hoje" value={kpis.hoje} icon={Clock} variant="warning" />
+          <KPICard title="Amanhã" value={kpis.amanha} icon={CalendarDays} variant="primary" />
+          <KPICard title="Esta Semana" value={kpis.semana} icon={Timer} variant="default" />
+          <KPICard title="Atrasados" value={kpis.atrasados} icon={AlertTriangle} variant="destructive" />
+          <KPICard title="Cumpridos" value={kpis.cumpridos} icon={CheckCircle2} variant="success" />
         </div>
 
-        {/* Filters + View Toggle */}
         <div className="flex flex-col sm:flex-row justify-between gap-3">
           <div className="flex gap-2 flex-wrap">
             {[
@@ -53,13 +110,10 @@ const Prazos = () => {
               { key: "atrasado", label: "Atrasados" },
               { key: "cumprido", label: "Cumpridos" },
             ].map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setStatusFilter(s.key)}
+              <button key={s.key} onClick={() => setStatusFilter(s.key)}
                 className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                   statusFilter === s.key ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border hover:border-primary/30"
-                }`}
-              >
+                }`}>
                 {s.label}
               </button>
             ))}
@@ -85,60 +139,111 @@ const Prazos = () => {
                     <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden lg:table-cell">Responsável</th>
                     <th className="text-left py-3 px-4 text-muted-foreground font-medium">Data Limite</th>
                     <th className="text-left py-3 px-4 text-muted-foreground font-medium">Status</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden sm:table-cell">Prioridade</th>
+                    <th className="text-right py-3 px-4 text-muted-foreground font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((p) => (
-                    <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                      <td className="py-3 px-4">
-                        <p className="font-medium text-foreground">{p.titulo}</p>
-                        <p className="text-xs text-muted-foreground md:hidden">{p.processo}</p>
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground font-mono text-xs hidden md:table-cell">{p.processo}</td>
-                      <td className="py-3 px-4 text-foreground hidden lg:table-cell">{p.responsavel}</td>
-                      <td className="py-3 px-4 text-foreground font-medium">{p.dataLimite}</td>
-                      <td className="py-3 px-4"><StatusBadge status={p.status} /></td>
-                      <td className="py-3 px-4 text-muted-foreground hidden sm:table-cell">{p.prioridade}</td>
-                    </tr>
-                  ))}
+                  {filtered.map((p) => {
+                    const proc = p.processoId ? processos[p.processoId] : null;
+                    const resp = p.responsavelId ? users[p.responsavelId] : null;
+                    return (
+                      <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                        <td className="py-3 px-4">
+                          <button onClick={() => handleEdit(p)} className="font-medium text-foreground hover:text-primary text-left">
+                            {p.titulo}
+                          </button>
+                          {proc && <p className="text-xs text-muted-foreground md:hidden">{proc.numero || proc.titulo}</p>}
+                        </td>
+                        <td className="py-3 px-4 hidden md:table-cell">
+                          {proc ? (
+                            <Link to={`/processos/${proc.id}`} className="text-primary hover:underline font-mono text-xs">
+                              {proc.numero || proc.titulo}
+                            </Link>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
+                        </td>
+                        <td className="py-3 px-4 text-foreground hidden lg:table-cell">{resp?.nome || "—"}</td>
+                        <td className="py-3 px-4 text-foreground font-medium">{formatDate(p.dataLimite)}{p.hora ? ` ${p.hora}` : ""}</td>
+                        <td className="py-3 px-4"><StatusBadge status={p.status} /></td>
+                        <td className="py-3 px-4">
+                          <div className="flex justify-end gap-1">
+                            {p.status !== "cumprido" && (
+                              <Button size="icon" variant="ghost" onClick={() => handleConcluir(p)} title="Marcar como cumprido">
+                                <CheckCheck className="h-4 w-4 text-success" />
+                              </Button>
+                            )}
+                            <Button size="icon" variant="ghost" onClick={() => handleEdit(p)} title="Editar">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={() => setConfirmDel(p)} title="Excluir">
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={6} className="py-12 text-center text-muted-foreground text-sm">
+                      Nenhum prazo encontrado. Clique em "Novo Prazo" para começar.
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         ) : (
-          /* Timeline view */
           <div className="bg-card rounded-lg border shadow-card p-6">
             <div className="relative">
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+              {filtered.length > 0 && <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />}
               <div className="space-y-6">
-                {filtered.map((p) => (
-                  <div key={p.id} className="relative pl-10">
-                    <div className={`absolute left-2.5 top-1.5 h-3 w-3 rounded-full border-2 ${
-                      p.status === "urgente" ? "bg-primary border-primary" :
-                      p.status === "atrasado" ? "bg-destructive border-destructive" :
-                      p.status === "cumprido" ? "bg-success border-success" :
-                      "bg-warning border-warning"
-                    }`} />
-                    <div className="p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="font-medium text-foreground">{p.titulo}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{p.processo} · {p.responsavel}</p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <StatusBadge status={p.status} />
-                          <p className="text-xs text-muted-foreground mt-1">{p.dataLimite}</p>
+                {filtered.map((p) => {
+                  const proc = p.processoId ? processos[p.processoId] : null;
+                  return (
+                    <div key={p.id} className="relative pl-10">
+                      <div className={`absolute left-2.5 top-1.5 h-3 w-3 rounded-full border-2 ${
+                        p.status === "urgente" ? "bg-primary border-primary" :
+                        p.status === "atrasado" ? "bg-destructive border-destructive" :
+                        p.status === "cumprido" ? "bg-success border-success" :
+                        "bg-warning border-warning"
+                      }`} />
+                      <div className="p-3 rounded-lg hover:bg-muted/50 transition-colors group">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <button onClick={() => handleEdit(p)} className="font-medium text-foreground hover:text-primary text-left">
+                              {p.titulo}
+                            </button>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {proc && <Link to={`/processos/${proc.id}`} className="text-primary hover:underline">{proc.numero || proc.titulo}</Link>}
+                              {proc && " · "}{users[p.responsavelId || ""]?.nome || ""}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
+                            <StatusBadge status={p.status} />
+                            <p className="text-xs text-muted-foreground">{formatDate(p.dataLimite)}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <p className="text-center text-muted-foreground text-sm py-8">Nenhum prazo encontrado.</p>
+                )}
               </div>
             </div>
           </div>
         )}
       </div>
+
+      <PrazoDialog open={dialogOpen} onOpenChange={setDialogOpen} prazo={editing} onSaved={load} />
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(v) => !v && setConfirmDel(null)}
+        title="Excluir prazo?"
+        description={confirmDel ? `O prazo "${confirmDel.titulo}" será removido permanentemente.` : ""}
+        confirmLabel="Excluir"
+        onConfirm={handleDelete}
+      />
     </AppLayout>
   );
 };
