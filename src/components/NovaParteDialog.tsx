@@ -1,16 +1,26 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { db, addHistorico } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
-import { ESTADOS_CIVIS, TIPOS_PESSOA, UFS_BRASIL } from "@/types";
+import { ESTADOS_CIVIS, TIPOS_PESSOA, UFS_BRASIL, type ParteInteressada } from "@/types";
 
-interface Props { onSaved?: () => void; triggerLabel?: string; }
+interface Props {
+  /** Quando passado, dispara callback com a parte recém-criada (uso inline em outros forms). */
+  onSaved?: (parte?: ParteInteressada) => void;
+  triggerLabel?: string;
+  /** Permite usar o dialog em modo controlado (sem trigger interno). */
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
+  trigger?: ReactNode;
+}
 
-export function NovaParteDialog({ onSaved, triggerLabel }: Props) {
-  const [open, setOpen] = useState(false);
+export function NovaParteDialog({ onSaved, triggerLabel, open: openExt, onOpenChange: onOpenChangeExt, trigger }: Props) {
+  const [openInt, setOpenInt] = useState(false);
+  const open = openExt ?? openInt;
+  const setOpen = onOpenChangeExt ?? setOpenInt;
   const { currentUser } = useAuth();
   const [tipoPessoa, setTipoPessoa] = useState("Pessoa Física");
   const [form, setForm] = useState<Record<string, string>>({});
@@ -23,47 +33,33 @@ export function NovaParteDialog({ onSaved, triggerLabel }: Props) {
     if (!nome) { toast.error("Preencha o nome"); return; }
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    await db.partes.add({
-      id,
-      tipoPessoa,
+    const parte: ParteInteressada = {
+      id, tipoPessoa,
       nome: form.nome || "",
       nomeSocial: form.nomeSocial,
       razaoSocial: form.razaoSocial,
       nomeFantasia: form.nomeFantasia,
-      cpfCnpj: form.cpfCnpj,
-      rg: form.rg,
-      orgaoEmissor: form.orgaoEmissor,
-      inscricaoEstadual: form.inscricaoEstadual,
-      inscricaoMunicipal: form.inscricaoMunicipal,
-      dataNascimento: form.dataNascimento,
-      nacionalidade: form.nacionalidade,
-      naturalidade: form.naturalidade,
-      estadoCivil: form.estadoCivil,
-      profissao: form.profissao,
-      genero: form.genero,
-      telefone: form.telefone,
-      telefone2: form.telefone2,
-      email: form.email,
-      endereco: form.endereco,
-      cep: form.cep,
-      cidade: form.cidade,
-      estado: form.estado,
-      representanteLegal: form.representanteLegal,
-      advogadoVinculado: form.advogadoVinculado,
-      qualificacao: form.qualificacao,
-      dadosComplementares: form.dadosComplementares,
+      cpfCnpj: form.cpfCnpj, rg: form.rg, orgaoEmissor: form.orgaoEmissor,
+      inscricaoEstadual: form.inscricaoEstadual, inscricaoMunicipal: form.inscricaoMunicipal,
+      dataNascimento: form.dataNascimento, nacionalidade: form.nacionalidade,
+      naturalidade: form.naturalidade, estadoCivil: form.estadoCivil,
+      profissao: form.profissao, genero: form.genero,
+      telefone: form.telefone, telefone2: form.telefone2, email: form.email,
+      endereco: form.endereco, cep: form.cep, cidade: form.cidade, estado: form.estado,
+      representanteLegal: form.representanteLegal, advogadoVinculado: form.advogadoVinculado,
+      qualificacao: form.qualificacao, dadosComplementares: form.dadosComplementares,
       observacoes: form.observacoes,
       status: "ativo",
       criadoPor: currentUser?.id || "",
-      criadoEm: now,
-      atualizadoEm: now,
-    });
-    await addHistorico(id, "parte", "criacao", `Parte "${nome}" cadastrada`, currentUser?.id || "", currentUser?.nome || "");
-    toast.success("Parte cadastrada com sucesso!");
-    setForm({});
-    setTipoPessoa("Pessoa Física");
+      criadoEm: now, atualizadoEm: now,
+    };
+    await db.partes.add(parte);
+    await addHistorico(id, "parte", "criacao", `Parte "${nome}" cadastrada`,
+      currentUser?.id || "", currentUser?.nome || "");
+    toast.success("Parte cadastrada!");
+    setForm({}); setTipoPessoa("Pessoa Física");
     setOpen(false);
-    onSaved?.();
+    onSaved?.(parte);
   };
 
   const inputCls = "w-full h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring";
@@ -71,15 +67,18 @@ export function NovaParteDialog({ onSaved, triggerLabel }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="gap-2"><Plus className="h-4 w-4" /> {triggerLabel || "Nova Parte"}</Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+      {trigger !== undefined ? (
+        trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null
+      ) : openExt === undefined && (
+        <DialogTrigger asChild>
+          <Button className="gap-2"><Plus className="h-4 w-4" /> {triggerLabel || "Nova Parte"}</Button>
+        </DialogTrigger>
+      )}
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-heading">Nova Parte Interessada</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5 mt-2">
-          {/* Tipo de pessoa */}
           <div className="space-y-1.5">
             <label className={labelCls}>Tipo de Pessoa *</label>
             <div className="flex gap-2 flex-wrap">
@@ -123,7 +122,6 @@ export function NovaParteDialog({ onSaved, triggerLabel }: Props) {
               </>
             )}
 
-            {/* Common */}
             <F label="Telefone" k="telefone" form={form} set={set} />
             <F label="Telefone 2" k="telefone2" form={form} set={set} />
             <F label="Email" k="email" form={form} set={set} type="email" />
