@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Scale, User, LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
+import { Scale, LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { signInWithGoogleStub } from "@/services/auth/firebaseAuth";
 
 const Login = () => {
   const { login, register, localUsers } = useAuth();
