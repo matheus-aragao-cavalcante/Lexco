@@ -127,6 +127,8 @@ const Login = () => {
           {mode === "login" && (
             <>
               <h2 className="text-lg font-heading font-semibold text-foreground text-center">Entrar</h2>
+              <GoogleButton />
+              <Divider />
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-sm text-muted-foreground">Email</label>
@@ -166,6 +168,8 @@ const Login = () => {
           {mode === "register" && (
             <>
               <h2 className="text-lg font-heading font-semibold text-foreground text-center">Criar Conta</h2>
+              <GoogleButton />
+              <Divider />
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-sm text-muted-foreground">Nome completo</label>
