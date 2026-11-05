@@ -8,7 +8,7 @@ import type {
  * Banco local (IndexedDB via Dexie). Todos os dados do Lexco ficam aqui, no
  * computador do usuário. Backup/restauração: src/lib/backup.ts (arquivo ou Google Drive).
  */
-class LexcoDB extends Dexie {
+export class LexcoDB extends Dexie {
   users!: Table<User>;
   processos!: Table<Processo>;
   partes!: Table<ParteInteressada>;
@@ -18,8 +18,8 @@ class LexcoDB extends Dexie {
   arquivos!: Table<Arquivo>;
   historico!: Table<HistoricoAlteracao>;
 
-  constructor() {
-    super("lexco");
+  constructor(nome = "lexco") {
+    super(nome);
     this.version(1).stores({
       users: "id, email, status",
       processos: "id, numero, status, responsavelId, criadoPor",
@@ -33,7 +33,20 @@ class LexcoDB extends Dexie {
   }
 }
 
-export const db = new LexcoDB();
+/** Banco do próprio usuário neste computador (login, backup, usuários). Nunca muda. */
+export const dbProprio = new LexcoDB();
+
+/**
+ * Banco ATIVO usado pelas telas. É o próprio, ou — quando o usuário entra num
+ * ambiente compartilhado por outro administrador — uma cópia local separada
+ * daquele ambiente ("lexco-amb-<id>"). As duas nunca se misturam.
+ * (Exportação "viva": quem importa `db` sempre enxerga o banco atual.)
+ */
+export let db: LexcoDB = dbProprio;
+
+export function definirBancoAtivo(novo: LexcoDB) {
+  db = novo;
+}
 
 /** Registra alteração no histórico. */
 export async function addHistorico(
@@ -75,7 +88,8 @@ export async function contarDependenciasProcesso(processoId: string) {
  * processo + prazos + eventos + vínculos, e o histórico/anexos do processo
  * E dos prazos/eventos filhos.
  */
-export async function deleteProcessoCascata(processoId: string) {
+export async function deleteProcessoCascata(processoId: string, banco: LexcoDB = db) {
+  const db = banco;
   await db.transaction("rw", [db.processos, db.prazos, db.eventos, db.arquivos, db.vinculos, db.historico], async () => {
     const prazoIds = await db.prazos.where("processoId").equals(processoId).primaryKeys();
     const eventoIds = await db.eventos.where("processoId").equals(processoId).primaryKeys();
@@ -115,4 +129,13 @@ export async function excluirParte(parteId: string) {
       });
     await db.partes.delete(parteId);
   });
+}
+
+/** Outra parte com o mesmo CPF/CNPJ (ignorando máscara), para avisar duplicidade. */
+export async function parteComDocumento(documento: string, ignorarId?: string): Promise<ParteInteressada | undefined> {
+  const alvo = (documento || "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (alvo.length < 11) return undefined;
+  return db.partes
+    .filter((p) => p.id !== ignorarId && (p.cpfCnpj || "").toUpperCase().replace(/[^0-9A-Z]/g, "") === alvo)
+    .first();
 }

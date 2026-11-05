@@ -4,6 +4,7 @@ import { Scale, Eye, EyeOff, ArrowLeft, HardDrive, Cloud, ShieldCheck, Loader2, 
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getDesktopGoogle, googleDrive } from "@/lib/googleDrive";
+import { EDICAO } from "@/lib/edicao";
 
 type Mode = "inicio" | "login" | "register";
 
@@ -90,7 +91,7 @@ const Login = () => {
           <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-[hsl(16_92%_60%)] to-[hsl(12_85%_46%)] flex items-center justify-center shadow-lg shadow-primary/30">
             <Scale className="h-6 w-6" strokeWidth={1.75} />
           </div>
-          <span className="font-heading text-2xl font-bold">Lexco</span>
+          <span className="font-heading text-2xl font-bold">{EDICAO.nomeApp}</span>
         </div>
 
         <div className="relative space-y-6">
@@ -115,7 +116,7 @@ const Login = () => {
           </ul>
         </div>
 
-        <p className="relative text-xs text-white/40">Lexco — Gestão Jurídica</p>
+        <p className="relative text-xs text-white/40">{EDICAO.nomeApp} — {EDICAO.subtitulo}</p>
       </aside>
 
       {/* Painel de acesso */}
@@ -126,7 +127,7 @@ const Login = () => {
             <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-3">
               <Scale className="h-7 w-7 text-primary-foreground" />
             </div>
-            <h1 className="text-3xl font-heading font-bold text-foreground">Lexco</h1>
+            <h1 className="text-3xl font-heading font-bold text-foreground">{EDICAO.nomeApp}</h1>
           </div>
 
           {mode === "inicio" && (

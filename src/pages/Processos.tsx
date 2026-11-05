@@ -10,6 +10,7 @@ import { db, deleteProcessoCascata, contarDependenciasProcesso, addHistorico } f
 import { useAuth } from "@/contexts/AuthContext";
 import type { Processo } from "@/types";
 import { toast } from "sonner";
+import { EDICAO } from "@/lib/edicao";
 
 const Processos = () => {
   const [processos, setProcessos] = useState<Processo[]>([]);
@@ -17,7 +18,7 @@ const Processos = () => {
   const [search, setSearch] = useState("");
   const [confirmDel, setConfirmDel] = useState<{ id: string; titulo: string; deps: string } | null>(null);
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, permissoes } = useAuth();
 
   const load = async () => { setProcessos(await db.processos.toArray()); };
   useEffect(() => { load(); }, []);
@@ -62,7 +63,7 @@ const Processos = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Processos</h1>
             <p className="text-muted-foreground text-sm mt-1">Gerencie todos os processos · {processos.length} total</p>
           </div>
-          <NovoProcessoDialog onSaved={load} />
+          {permissoes.cadastrarProcessos && <NovoProcessoDialog onSaved={load} />}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -88,7 +89,7 @@ const Processos = () => {
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">Processo</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden lg:table-cell">Número</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden md:table-cell">Área</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden xl:table-cell">Tribunal</th>
+                <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden xl:table-cell">{EDICAO.edicao === "spu" ? "Órgão" : "Tribunal / Órgão"}</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">Status</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">Ações</th>
               </tr></thead>

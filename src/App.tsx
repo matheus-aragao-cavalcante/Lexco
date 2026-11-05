@@ -18,6 +18,10 @@ import PerfilUsuario from "./pages/PerfilUsuario";
 import NotFound from "./pages/NotFound";
 import { SplashScreen } from "@/components/SplashScreen";
 import { DriveBackupProvider } from "@/contexts/DriveBackupContext";
+import { CompartilhamentoProvider } from "@/contexts/CompartilhamentoContext";
+import EscolherAmbiente from "./pages/EscolherAmbiente";
+import { useEffect, useState } from "react";
+
 
 const queryClient = new QueryClient();
 
@@ -32,12 +36,20 @@ function AppRoutes() {
 }
 
 function AppContent() {
-  const { currentUser, podeGerenciarUsuarios } = useAuth();
+  const { currentUser, podeGerenciarUsuarios, ambiente, ambientesDisponiveis, ambienteEscolhido } = useAuth();
+  const [versao, setVersao] = useState(0);
+  useEffect(() => {
+    const f = () => setVersao((v) => v + 1);
+    window.addEventListener("lexco:recarregar-telas", f);
+    return () => window.removeEventListener("lexco:recarregar-telas", f);
+  }, []);
 
   if (!currentUser) return <Login />;
+  if (ambientesDisponiveis.length > 0 && !ambienteEscolhido) return <EscolherAmbiente />;
 
+  // A chave remonta as telas ao trocar de ambiente (cada um tem o seu banco).
   return (
-    <Routes>
+    <Routes key={`${ambiente?.id ?? "proprio"}-${versao}`}>
       <Route path="/" element={<Dashboard />} />
       <Route path="/processos" element={<Processos />} />
       <Route path="/processos/:id" element={<ProcessoDetalhe />} />
@@ -61,7 +73,9 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <DriveBackupProvider>
-            <AppRoutes />
+            <CompartilhamentoProvider>
+              <AppRoutes />
+            </CompartilhamentoProvider>
           </DriveBackupProvider>
         </AuthProvider>
       </BrowserRouter>

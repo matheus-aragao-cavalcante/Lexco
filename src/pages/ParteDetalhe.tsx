@@ -1,7 +1,9 @@
 import { AppLayout } from "@/components/AppLayout";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { db, addHistorico } from "@/lib/db";
+import { db, addHistorico, parteComDocumento } from "@/lib/db";
+import { erroDocumento, tipoDocumentoDe } from "@/lib/documentos";
+import { SeletorTipoPessoa, CampoDocumento } from "@/components/PessoaCampos";
 import { useAuth } from "@/contexts/AuthContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,9 @@ import { ESTADOS_CIVIS, TIPOS_PESSOA, UFS_BRASIL } from "@/types";
 const ParteDetalhe = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, permissoes } = useAuth();
+  // Dados pessoais ocultos: chegam mascarados e não podem ser editados.
+  const travaPessoal = !permissoes.verDadosPessoais;
   const [parte, setParte] = useState<ParteInteressada | null>(null);
   const [vinculos, setVinculos] = useState<(VinculoProcessoParte & { processo?: Processo })[]>([]);
   const [eventos, setEventos] = useState<Evento[]>([]);
@@ -55,7 +59,26 @@ const ParteDetalhe = () => {
 
   const handleSave = async () => {
     if (!parte || !id) return;
-    const updated = { ...parte, ...form, atualizadoEm: new Date().toISOString() } as ParteInteressada;
+    const pf = (form.tipoPessoa || parte.tipoPessoa) === "Pessoa Física";
+    const nome = pf ? form.nome : (form.razaoSocial || form.nome);
+    if (!nome?.trim()) { toast.error(pf ? "Preencha o nome completo" : "Preencha a razão social"); return; }
+    // Com dados pessoais ocultos o documento vem mascarado: não valida (nem é enviado de volta).
+    const erroDoc = travaPessoal ? null : erroDocumento(tipoDocumentoDe(form.tipoPessoa || parte.tipoPessoa), form.cpfCnpj);
+    if (erroDoc) { toast.error(erroDoc); return; }
+    const dup = form.cpfCnpj && !travaPessoal ? await parteComDocumento(form.cpfCnpj, id) : undefined;
+    if (dup) { toast.error(`Este documento já está cadastrado para "${dup.nome || dup.razaoSocial}".`); return; }
+    // Evita sobrescrever uma alteração feita em outra janela/usuário desde que a tela foi aberta.
+    const atual = await db.partes.get(id);
+    if (atual && atual.atualizadoEm !== parte.atualizadoEm) {
+      toast.error("Esta parte foi alterada em outro lugar enquanto você editava. Recarregue para ver a versão atual antes de salvar.");
+      return;
+    }
+    const { _docGuardado: _ignorar, ...dados } = form;
+    const updated = {
+      ...parte, ...dados,
+      nome: pf ? form.nome : (form.razaoSocial || form.nome),
+      atualizadoEm: new Date().toISOString(),
+    } as ParteInteressada;
     await db.partes.put(updated);
     await addHistorico(id, "parte", "edicao", "Dados da parte atualizados", currentUser?.id || "", currentUser?.nome || "");
     setParte(updated);
@@ -116,17 +139,41 @@ const ParteDetalhe = () => {
                   <Button size="sm" onClick={handleSave}><Save className="h-4 w-4 mr-1" /> Salvar</Button>
                 </div>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => setEditing(true)}><Edit className="h-4 w-4 mr-1" /> Editar</Button>
+                permissoes.editarProcessos && <Button size="sm" variant="outline" onClick={() => setEditing(true)}><Edit className="h-4 w-4 mr-1" /> Editar</Button>
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Field label="Nome" value={form.nome} disabled={!editing} onChange={(v) => setForm({ ...form, nome: v })} />
-              <Field label="CPF/CNPJ" value={form.cpfCnpj} disabled={!editing} onChange={(v) => setForm({ ...form, cpfCnpj: v })} />
-              <Field label="Telefone" value={form.telefone} disabled={!editing} onChange={(v) => setForm({ ...form, telefone: v })} />
-              <Field label="Email" value={form.email} disabled={!editing} onChange={(v) => setForm({ ...form, email: v })} />
+              {editing && !travaPessoal && (
+                <div className="sm:col-span-2 lg:col-span-3 space-y-1.5">
+                  <label className="text-sm text-muted-foreground">Tipo de Pessoa</label>
+                  <SeletorTipoPessoa value={form.tipoPessoa || ""} onChange={(t) => {
+                    // Documento do outro tipo não serve: guarda e devolve se o usuário voltar.
+                    const mudouDoc = tipoDocumentoDe(t) !== tipoDocumentoDe(form.tipoPessoa || "");
+                    setForm({
+                      ...form, tipoPessoa: t,
+                      ...(mudouDoc ? { cpfCnpj: form._docGuardado || "", _docGuardado: form.cpfCnpj || "" } : {}),
+                    });
+                  }} />
+                </div>
+              )}
+              {form.tipoPessoa === "Pessoa Física" ? (
+                <>
+                  <Field label="Nome Completo" value={form.nome} disabled={!editing || travaPessoal} onChange={(v) => setForm({ ...form, nome: v })} />
+                  <Field label="Nome Social" value={form.nomeSocial} disabled={!editing || travaPessoal} onChange={(v) => setForm({ ...form, nomeSocial: v })} />
+                </>
+              ) : (
+                <>
+                  <Field label="Razão Social" value={form.razaoSocial || form.nome} disabled={!editing || travaPessoal} onChange={(v) => setForm({ ...form, razaoSocial: v })} />
+                  <Field label="Nome Fantasia" value={form.nomeFantasia} disabled={!editing} onChange={(v) => setForm({ ...form, nomeFantasia: v })} />
+                </>
+              )}
+              <CampoDocumento tipo={tipoDocumentoDe(form.tipoPessoa || "")} value={form.cpfCnpj || ""} disabled={!editing || travaPessoal}
+                onChange={(v) => setForm({ ...form, cpfCnpj: v })} />
+              <Field label="Telefone" value={form.telefone} disabled={!editing || travaPessoal} onChange={(v) => setForm({ ...form, telefone: v })} />
+              <Field label="Email" value={form.email} disabled={!editing || travaPessoal} onChange={(v) => setForm({ ...form, email: v })} />
               <Field label="Cidade" value={form.cidade} disabled={!editing} onChange={(v) => setForm({ ...form, cidade: v })} />
               <Field label="Estado" value={form.estado} disabled={!editing} onChange={(v) => setForm({ ...form, estado: v })} />
-              <Field label="Endereço" value={form.endereco} disabled={!editing} onChange={(v) => setForm({ ...form, endereco: v })} />
+              <Field label="Endereço" value={form.endereco} disabled={!editing || travaPessoal} onChange={(v) => setForm({ ...form, endereco: v })} />
               <Field label="Profissão" value={form.profissao} disabled={!editing} onChange={(v) => setForm({ ...form, profissao: v })} />
               <Field label="Nacionalidade" value={form.nacionalidade} disabled={!editing} onChange={(v) => setForm({ ...form, nacionalidade: v })} />
             </div>

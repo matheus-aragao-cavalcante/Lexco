@@ -20,5 +20,15 @@ contextBridge.exposeInMainWorld("lexcoDesktop", {
     list: call("google:list"),
     download: call("google:download"),
     delete: call("google:delete"),
+    docUpload: call("google:docUpload"),
+    docDelete: call("google:docDelete"),
+    docsCompartilhar: call("google:docsCompartilhar"),
+    sharePublish: call("google:sharePublish"),
+    shareDelete: call("google:shareDelete"),
+    shareRead: call("google:shareRead"),
+  },
+  consulta: {
+    datajud: call("consulta:datajud"),
+    djen: call("consulta:djen"),
   },
 });

@@ -4,7 +4,7 @@
   "description": "Lexco — Gestão Jurídica",
   "author": "Lexco",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "main": "electron/main.cjs",
   "build": {
@@ -24,6 +24,7 @@
       "target": "nsis",
       "icon": "public/favicon.ico"
     },
+    "icon": "public/favicon.ico",
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -31,6 +32,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Lexco",
+      "installerIcon": "public/favicon.ico",
+      "uninstallerIcon": "public/favicon.ico",
+      "installerHeaderIcon": "public/favicon.ico",
+      "include": "build/installer.nsh",
       "deleteAppDataOnUninstall": false
     }
   },
@@ -38,6 +43,10 @@
     "dev": "vite",
     "electron:dev": "npm run google:config && concurrently -k -n vite,electron \"vite --port 8080 --strictPort\" \"wait-on tcp:127.0.0.1:8080 && cross-env ELECTRON_DEV_URL=http://localhost:8080 electron .\"",
     "electron:build": "npm run google:config && vite build && electron-builder --win",
+    "electron:build:spu": "npm run google:config && npm run build:spu && electron-builder --win -c.appId=br.com.lexco.spu -c.productName=\"Lexco SPU\" -c.extraMetadata.name=lexco-spu -c.extraMetadata.productName=\"Lexco SPU\" -c.directories.output=release/spu -c.nsis.shortcutName=\"Lexco SPU\"",
+    "electron:build:todas": "npm run electron:build && npm run electron:build:spu",
+    "electron:dev:spu": "npm run google:config && concurrently -k -n vite,electron \"cross-env VITE_EDICAO=spu vite --port 8080 --strictPort\" \"wait-on tcp:127.0.0.1:8080 && cross-env ELECTRON_DEV_URL=http://localhost:8080 electron .\"",
+    "build:spu": "cross-env VITE_EDICAO=spu vite build",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

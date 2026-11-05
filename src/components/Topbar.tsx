@@ -1,15 +1,18 @@
-import { Search, ChevronDown, User, LogOut, UserCircle, ArrowLeftRight } from "lucide-react";
+import { Search, ChevronDown, LogOut, UserCircle, ArrowLeftRight, Building2, Home, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { BackupStatusButton } from "@/components/BackupStatusButton";
 import { SearchDialog } from "@/components/SearchDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { EntrarAmbienteDialog } from "@/components/EntrarAmbienteDialog";
+import { getDesktopGoogle } from "@/lib/googleDrive";
 
 export function Topbar() {
   const [showMenu, setShowMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const { currentUser, logout, switchUser } = useAuth();
+  const { currentUser, logout, switchUser, ambiente, ambientesDisponiveis, entrarAmbiente } = useAuth();
+  const [entrarOpen, setEntrarOpen] = useState(false);
   const navigate = useNavigate();
 
   const initials = currentUser?.nome
@@ -30,6 +33,7 @@ export function Topbar() {
       </div>
 
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      <EntrarAmbienteDialog open={entrarOpen} onOpenChange={setEntrarOpen} />
 
       <div className="flex items-center gap-3">
         <BackupStatusButton />
@@ -57,7 +61,7 @@ export function Topbar() {
           {showMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 w-52 bg-card border border-border rounded-lg shadow-elevated z-50 py-1">
+              <div className="absolute right-0 top-full mt-1 w-60 bg-card border border-border rounded-lg shadow-elevated z-50 py-1">
                 <button
                   onClick={() => { setShowMenu(false); navigate("/perfil"); }}
                   className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors w-full text-left text-foreground"
@@ -70,6 +74,26 @@ export function Topbar() {
                 >
                   <ArrowLeftRight className="h-4 w-4" /> Trocar Usuário
                 </button>
+                {getDesktopGoogle() && (
+                  <>
+                    <hr className="my-1 border-border" />
+                    <p className="px-3 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Ambiente</p>
+                    <button onClick={() => { setShowMenu(false); entrarAmbiente(null); }}
+                      className={`flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors w-full text-left ${!ambiente ? "text-primary font-medium" : "text-foreground"}`}>
+                      <Home className="h-4 w-4" /> Meu ambiente
+                    </button>
+                    {ambientesDisponiveis.map((a) => (
+                      <button key={a.id} onClick={() => { setShowMenu(false); entrarAmbiente(a.id); }}
+                        className={`flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors w-full text-left ${ambiente?.id === a.id ? "text-primary font-medium" : "text-foreground"}`}>
+                        <Building2 className="h-4 w-4 shrink-0" /> <span className="truncate">{a.donoNome}</span>
+                      </button>
+                    ))}
+                    <button onClick={() => { setShowMenu(false); setEntrarOpen(true); }}
+                      className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors w-full text-left text-foreground">
+                      <KeyRound className="h-4 w-4" /> Tenho um código de convite
+                    </button>
+                  </>
+                )}
                 <hr className="my-1 border-border" />
                 <button
                   onClick={() => { setShowMenu(false); logout(); }}

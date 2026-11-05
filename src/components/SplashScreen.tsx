@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Scale } from "lucide-react";
+import { EDICAO } from "@/lib/edicao";
 
 const MIN_DURATION_MS = 2300; // tempo mínimo para a animação completar
 const EXIT_MS = 600; // duração do fade-out
@@ -48,7 +49,7 @@ export function SplashScreen({ ready }: { ready: boolean }) {
             </span>
           ))}
         </h1>
-        <p className="splash__tagline">Gestão Jurídica</p>
+        <p className="splash__tagline">{EDICAO.edicao === "spu" ? "SPU · Processos Administrativos" : "Gestão Jurídica"}</p>
         <div className="splash__bar">
           <span />
         </div>

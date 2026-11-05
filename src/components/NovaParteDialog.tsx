@@ -1,11 +1,13 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { db, addHistorico } from "@/lib/db";
+import { db, addHistorico, parteComDocumento } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
-import { ESTADOS_CIVIS, TIPOS_PESSOA, UFS_BRASIL, type ParteInteressada } from "@/types";
+import { ESTADOS_CIVIS, UFS_BRASIL, type ParteInteressada } from "@/types";
+import { erroDocumento, tipoDocumentoDe } from "@/lib/documentos";
+import { SeletorTipoPessoa, CampoDocumento } from "@/components/PessoaCampos";
 
 interface Props {
   /** Quando passado, dispara callback com a parte recém-criada (uso inline em outros forms). */
@@ -15,38 +17,61 @@ interface Props {
   open?: boolean;
   onOpenChange?: (v: boolean) => void;
   trigger?: ReactNode;
+  /** Título do diálogo (ex.: "Novo Manifestante"). */
+  titulo?: string;
 }
 
-export function NovaParteDialog({ onSaved, triggerLabel, open: openExt, onOpenChange: onOpenChangeExt, trigger }: Props) {
+export function NovaParteDialog({ onSaved, triggerLabel, open: openExt, onOpenChange: onOpenChangeExt, trigger, titulo }: Props) {
   const [openInt, setOpenInt] = useState(false);
   const open = openExt ?? openInt;
   const setOpen = onOpenChangeExt ?? setOpenInt;
   const { currentUser } = useAuth();
   const [tipoPessoa, setTipoPessoa] = useState("Pessoa Física");
+  // CPF e CNPJ ficam em campos separados: trocar PF ↔ PJ não perde o que foi digitado.
   const [form, setForm] = useState<Record<string, string>>({});
+  const [duplicado, setDuplicado] = useState<string | null>(null);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const pf = tipoPessoa === "Pessoa Física";
+  const tipoDoc = tipoDocumentoDe(tipoPessoa);
+  const documento = (tipoDoc === "cpf" ? form.cpf : form.cnpj) || "";
+
+  useEffect(() => {
+    let vivo = true;
+    if (erroDocumento(tipoDoc, documento) || !documento) { setDuplicado(null); return; }
+    parteComDocumento(documento).then((p) => { if (vivo) setDuplicado(p ? (p.nome || p.razaoSocial || "sem nome") : null); });
+    return () => { vivo = false; };
+  }, [documento, tipoDoc]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const nome = tipoPessoa === "Pessoa Física" ? form.nome : (form.razaoSocial || form.nome);
-    if (!nome) { toast.error("Preencha o nome"); return; }
+    const nome = pf ? form.nome : (form.razaoSocial || form.nome);
+    if (!nome?.trim()) { toast.error(pf ? "Preencha o nome completo" : "Preencha a razão social"); return; }
+    const erroDoc = erroDocumento(tipoDoc, documento);
+    if (erroDoc) { toast.error(erroDoc); return; }
+    // Confere de novo no envio (a checagem enquanto digita pode não ter terminado).
+    const dup = documento ? await parteComDocumento(documento) : undefined;
+    if (dup) { toast.error(`Este ${tipoDoc.toUpperCase()} já está cadastrado para "${dup.nome || dup.razaoSocial}".`); return; }
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
+    // Grava só os campos do tipo escolhido (os do outro tipo ficam de fora).
+    const soPF = (v?: string) => (pf ? v : undefined);
+    const soPJ = (v?: string) => (pf ? undefined : v);
     const parte: ParteInteressada = {
       id, tipoPessoa,
-      nome: form.nome || "",
-      nomeSocial: form.nomeSocial,
-      razaoSocial: form.razaoSocial,
-      nomeFantasia: form.nomeFantasia,
-      cpfCnpj: form.cpfCnpj, rg: form.rg, orgaoEmissor: form.orgaoEmissor,
-      inscricaoEstadual: form.inscricaoEstadual, inscricaoMunicipal: form.inscricaoMunicipal,
-      dataNascimento: form.dataNascimento, nacionalidade: form.nacionalidade,
-      naturalidade: form.naturalidade, estadoCivil: form.estadoCivil,
-      profissao: form.profissao, genero: form.genero,
+      // Em PJ, "nome" recebe a razão social para listas e buscas funcionarem igual.
+      nome: (pf ? form.nome : (form.razaoSocial || form.nome)) || "",
+      nomeSocial: soPF(form.nomeSocial),
+      razaoSocial: soPJ(form.razaoSocial),
+      nomeFantasia: soPJ(form.nomeFantasia),
+      cpfCnpj: documento || undefined, rg: soPF(form.rg), orgaoEmissor: soPF(form.orgaoEmissor),
+      inscricaoEstadual: soPJ(form.inscricaoEstadual), inscricaoMunicipal: soPJ(form.inscricaoMunicipal),
+      dataNascimento: soPF(form.dataNascimento), nacionalidade: soPF(form.nacionalidade),
+      naturalidade: soPF(form.naturalidade), estadoCivil: soPF(form.estadoCivil),
+      profissao: soPF(form.profissao), genero: soPF(form.genero),
       telefone: form.telefone, telefone2: form.telefone2, email: form.email,
       endereco: form.endereco, cep: form.cep, cidade: form.cidade, estado: form.estado,
-      representanteLegal: form.representanteLegal, advogadoVinculado: form.advogadoVinculado,
+      representanteLegal: soPJ(form.representanteLegal), advogadoVinculado: form.advogadoVinculado,
       qualificacao: form.qualificacao, dadosComplementares: form.dadosComplementares,
       observacoes: form.observacoes,
       status: "ativo",
@@ -76,26 +101,20 @@ export function NovaParteDialog({ onSaved, triggerLabel, open: openExt, onOpenCh
       )}
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-heading">Nova Parte Interessada</DialogTitle>
+          <DialogTitle className="font-heading">{titulo || "Nova Parte Interessada"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5 mt-2">
           <div className="space-y-1.5">
             <label className={labelCls}>Tipo de Pessoa *</label>
-            <div className="flex gap-2 flex-wrap">
-              {TIPOS_PESSOA.map((t) => (
-                <button key={t} type="button" onClick={() => setTipoPessoa(t)}
-                  className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${tipoPessoa === t ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}
-                >{t}</button>
-              ))}
-            </div>
+            <SeletorTipoPessoa value={tipoPessoa} onChange={setTipoPessoa} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {tipoPessoa === "Pessoa Física" ? (
+            {pf ? (
               <>
                 <F label="Nome Completo *" k="nome" form={form} set={set} />
                 <F label="Nome Social" k="nomeSocial" form={form} set={set} />
-                <F label="CPF" k="cpfCnpj" form={form} set={set} placeholder="000.000.000-00" />
+                <CampoDocumento tipo="cpf" value={form.cpf || ""} onChange={(v) => set("cpf", v)} duplicado={duplicado} />
                 <F label="RG" k="rg" form={form} set={set} />
                 <F label="Órgão Emissor" k="orgaoEmissor" form={form} set={set} />
                 <F label="Data de Nascimento" k="dataNascimento" form={form} set={set} type="date" />
@@ -115,7 +134,7 @@ export function NovaParteDialog({ onSaved, triggerLabel, open: openExt, onOpenCh
               <>
                 <F label="Razão Social *" k="razaoSocial" form={form} set={set} />
                 <F label="Nome Fantasia" k="nomeFantasia" form={form} set={set} />
-                <F label="CNPJ" k="cpfCnpj" form={form} set={set} placeholder="00.000.000/0000-00" />
+                <CampoDocumento tipo="cnpj" value={form.cnpj || ""} onChange={(v) => set("cnpj", v)} duplicado={duplicado} />
                 <F label="Inscrição Estadual" k="inscricaoEstadual" form={form} set={set} />
                 <F label="Inscrição Municipal" k="inscricaoMunicipal" form={form} set={set} />
                 <F label="Representante" k="representanteLegal" form={form} set={set} />

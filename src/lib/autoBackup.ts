@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbProprio as db } from "@/lib/db";
 import { hojeISO } from "@/lib/dates";
 
 /**

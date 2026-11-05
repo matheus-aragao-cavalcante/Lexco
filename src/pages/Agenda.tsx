@@ -1,12 +1,15 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, ListTodo } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { db, addHistorico } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { EventoDialog } from "@/components/EventoDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { TarefaDialog } from "@/components/TarefaDialog";
+import { TarefasPanel } from "@/components/TarefasPanel";
+import { ehTarefa, alternarConclusao, excluirTarefa } from "@/lib/tarefas";
 import type { Evento, Processo } from "@/types";
 import { formatarData, hojeISO, toISODateLocal } from "@/lib/dates";
 import { toast } from "sonner";
@@ -24,11 +27,14 @@ const tipoColors: Record<string, string> = {
   despacho: "bg-warning/10 text-warning border-l-2 border-l-warning",
   sessao: "bg-primary/15 text-primary border-l-2 border-l-primary",
   compromisso: "bg-muted text-muted-foreground border-l-2 border-l-border",
+  tarefa: "bg-accent/10 text-accent border-l-2 border-l-accent",
   outro: "bg-muted text-muted-foreground border-l-2 border-l-border",
 };
 
 const Agenda = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, permissoes } = useAuth();
+  const podeEditar = permissoes.editarProcessos;
+  const podeTarefas = permissoes.tarefas === "editar";
   const [view, setView] = useState<"mes" | "semana" | "dia">("mes");
   // Data selecionada: base para as visões de mês, semana e dia.
   const [cursor, setCursor] = useState(() => new Date());
@@ -38,11 +44,27 @@ const Agenda = () => {
   const [editing, setEditing] = useState<Evento | null>(null);
   const [initialDate, setInitialDate] = useState<string>("");
   const [confirmDel, setConfirmDel] = useState<Evento | null>(null);
+  const [tarefaOpen, setTarefaOpen] = useState(false);
+  const [editingTarefa, setEditingTarefa] = useState<Evento | null>(null);
+  const [usuarios, setUsuarios] = useState<Record<string, string>>({});
 
   const load = async () => {
-    const [evs, procs] = await Promise.all([db.eventos.toArray(), db.processos.toArray()]);
+    const [evs, procs, us] = await Promise.all([db.eventos.toArray(), db.processos.toArray(), db.users.toArray()]);
     setEventos(evs);
     setProcessos(Object.fromEntries(procs.map((p) => [p.id, p])));
+    setUsuarios(Object.fromEntries(us.map((u) => [u.id, u.nome])));
+  };
+  const autor = { id: currentUser?.id || "", nome: currentUser?.nome || "" };
+  const novaTarefa = (data?: string) => { setEditingTarefa(null); setInitialDate(data || (view === "mes" ? todayISO : cursorISO)); setTarefaOpen(true); };
+  const editarTarefa = (t: Evento) => { setEditingTarefa(t); setTarefaOpen(true); };
+  const handleAlternarTarefa = async (t: Evento) => {
+    try {
+      const nova = await alternarConclusao(t, autor);
+      toast.success(nova.status === "concluido" ? "Tarefa concluída!" : "Tarefa reaberta");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível atualizar a tarefa");
+    }
+    load();
   };
   useEffect(() => { load(); }, []);
 
@@ -81,13 +103,28 @@ const Agenda = () => {
   }, [eventos, year, month]);
 
   const handleNewAt = (dia: number) => {
+    if (!podeEditar) return;
     const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
     setEditing(null); setInitialDate(iso); setDialogOpen(true);
   };
-  const handleEdit = (e: Evento) => { setEditing(e); setInitialDate(""); setDialogOpen(true); };
+  // Tarefas abrem o formulário próprio; demais eventos, o de evento.
+  const handleEdit = (e: Evento) => {
+    if (ehTarefa(e)) { if (podeTarefas) editarTarefa(e); return; }
+    if (!podeEditar) return;
+    setEditing(e); setInitialDate(""); setDialogOpen(true);
+  };
 
   const handleDelete = async () => {
     if (!confirmDel) return;
+    if (ehTarefa(confirmDel)) {
+      await excluirTarefa(confirmDel, autor);
+      await addHistorico(confirmDel.id, "evento", "exclusao",
+        `Tarefa "${confirmDel.titulo}" excluída`, autor.id, autor.nome);
+      toast.success("Tarefa excluída");
+      setConfirmDel(null);
+      load();
+      return;
+    }
     await db.eventos.delete(confirmDel.id);
     await addHistorico(confirmDel.id, "evento", "exclusao",
       `Evento "${confirmDel.titulo}" excluído`, currentUser?.id || "", currentUser?.nome || "");
@@ -130,9 +167,16 @@ const Agenda = () => {
                 </button>
               ))}
             </div>
-            <Button className="gap-2" onClick={() => { setEditing(null); setInitialDate(view === "mes" ? todayISO : cursorISO); setDialogOpen(true); }}>
-              <Plus className="h-4 w-4" /> Novo Evento
-            </Button>
+            {podeTarefas && (
+              <Button variant="outline" className="gap-2" onClick={() => novaTarefa()}>
+                <ListTodo className="h-4 w-4" /> + Nova Tarefa
+              </Button>
+            )}
+            {podeEditar && (
+              <Button className="gap-2" onClick={() => { setEditing(null); setInitialDate(view === "mes" ? todayISO : cursorISO); setDialogOpen(true); }}>
+                <Plus className="h-4 w-4" /> Novo Evento
+              </Button>
+            )}
           </div>
         </div>
 
@@ -167,8 +211,8 @@ const Agenda = () => {
                         <div className="space-y-1 mt-1">
                           {evs.slice(0, 2).map((e) => (
                             <button key={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdit(e); }}
-                              className={`w-full text-left text-[10px] px-1.5 py-0.5 rounded truncate ${tipoColors[e.tipo] || tipoColors.outro}`}>
-                              {e.horaInicio || ""} {e.titulo}
+                              className={`w-full text-left text-[10px] px-1.5 py-0.5 rounded truncate ${tipoColors[e.tipo] || tipoColors.outro} ${e.status === "concluido" && ehTarefa(e) ? "line-through opacity-60" : ""}`}>
+                              {ehTarefa(e) ? "☐ " : ""}{e.horaInicio || ""} {e.titulo}
                             </button>
                           ))}
                           {evs.length > 2 && (
@@ -205,7 +249,7 @@ const Agenda = () => {
                     <div className="space-y-2">
                       {evs.map((e) => (
                         <button key={e.id} onClick={() => handleEdit(e)}
-                          className={`w-full text-left text-xs p-2 rounded ${tipoColors[e.tipo] || tipoColors.outro}`}>
+                          className={`w-full text-left text-xs p-2 rounded ${tipoColors[e.tipo] || tipoColors.outro} ${e.status === "concluido" && ehTarefa(e) ? "line-through opacity-60" : ""}`}>
                           <p className="font-medium">{e.horaInicio || ""}</p>
                           <p className="truncate">{e.titulo}</p>
                         </button>
@@ -229,13 +273,18 @@ const Agenda = () => {
                 return (
                   <div key={e.id} className={`flex items-start justify-between gap-3 p-3 rounded-lg ${tipoColors[e.tipo] || tipoColors.outro}`}>
                     <div className="flex-1 min-w-0">
-                      <button onClick={() => handleEdit(e)} className="font-medium text-left hover:underline">{e.titulo}</button>
+                      <button onClick={() => handleEdit(e)} className={`font-medium text-left hover:underline ${e.status === "concluido" && ehTarefa(e) ? "line-through opacity-60" : ""}`}>{ehTarefa(e) ? "Tarefa: " : ""}{e.titulo}</button>
                       <p className="text-xs opacity-80 mt-0.5">
                         {e.horaInicio ? e.horaInicio : "Dia todo"}
                         {proc && <> · <Link to={`/processos/${proc.id}`} className="underline hover:opacity-100">{proc.numero || proc.titulo}</Link></>}
                       </p>
                     </div>
                     <div className="flex gap-1">
+                      {ehTarefa(e) && (
+                        <Button size="sm" variant="ghost" onClick={() => handleAlternarTarefa(e)}>
+                          {e.status === "concluido" ? "Reabrir" : "Concluir"}
+                        </Button>
+                      )}
                       <Button size="icon" variant="ghost" onClick={() => handleEdit(e)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button size="icon" variant="ghost" onClick={() => setConfirmDel(e)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
                     </div>
@@ -253,15 +302,29 @@ const Agenda = () => {
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" /> Audiência/Sessão</span>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-warning" /> Prazo/Despacho</span>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-success" /> Reunião/Atendimento</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-accent" /> Tarefa</span>
         </div>
+
+        {permissoes.tarefas !== "nenhum" && <TarefasPanel
+          podeEditar={podeTarefas}
+          eventos={eventos}
+          processos={processos}
+          usuarios={usuarios}
+          usuarioAtualId={currentUser?.id}
+          onNova={() => novaTarefa()}
+          onEditar={editarTarefa}
+          onAlternar={handleAlternarTarefa}
+          onExcluir={setConfirmDel}
+        />}
       </div>
 
       <EventoDialog open={dialogOpen} onOpenChange={setDialogOpen} evento={editing} initialDate={initialDate} onSaved={load} />
+      <TarefaDialog open={tarefaOpen} onOpenChange={setTarefaOpen} tarefa={editingTarefa} initialDate={initialDate} onSaved={load} />
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
-        title="Excluir evento?"
-        description={confirmDel ? `O evento "${confirmDel.titulo}" será removido permanentemente.` : ""}
+        title={confirmDel && ehTarefa(confirmDel) ? "Excluir tarefa?" : "Excluir evento?"}
+        description={confirmDel ? `${ehTarefa(confirmDel) ? "A tarefa" : "O evento"} "${confirmDel.titulo}" será removid${ehTarefa(confirmDel) ? "a" : "o"} permanentemente.` : ""}
         confirmLabel="Excluir"
         onConfirm={handleDelete}
       />

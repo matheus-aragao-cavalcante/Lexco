@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { db, addHistorico } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
-import { TIPOS_EVENTO, MODALIDADES_EVENTO, PRIORIDADES, type Evento, type Processo, type User } from "@/types";
+import { TIPOS_EVENTO, TIPO_LABELS, MODALIDADES_EVENTO, PRIORIDADES, type Evento, type Processo, type User } from "@/types";
 
 interface Props {
   open: boolean;
@@ -15,12 +15,7 @@ interface Props {
   onSaved?: () => void;
 }
 
-const tipoLabels: Record<string, string> = {
-  audiencia: "Audiência", prazo: "Prazo", reuniao: "Reunião",
-  sustentacao_oral: "Sustentação Oral", diligencia: "Diligência",
-  protocolo: "Protocolo", atendimento: "Atendimento", despacho: "Despacho",
-  sessao: "Sessão", compromisso: "Compromisso", outro: "Outro",
-};
+const tipoLabels = TIPO_LABELS;
 
 /** Dialog reutilizável para criar/editar evento. */
 export function EventoDialog({ open, onOpenChange, evento, processoId, initialDate, onSaved }: Props) {
@@ -61,6 +56,14 @@ export function EventoDialog({ open, onOpenChange, evento, processoId, initialDa
     }
   }, [open, evento, processoId, initialDate, currentUser]);
 
+  /** Quem concluiu e quando (mesmo comportamento do formulário de tarefa). */
+  const conclusao = (status: Evento["status"], anterior?: Evento) =>
+    status !== "concluido"
+      ? { concluidoEm: undefined, concluidoPor: undefined }
+      : anterior?.status === "concluido"
+        ? {}
+        : { concluidoEm: new Date().toISOString(), concluidoPor: currentUser?.id || "" };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.titulo.trim() || !form.data) {
@@ -73,6 +76,7 @@ export function EventoDialog({ open, onOpenChange, evento, processoId, initialDa
         ...evento, ...form,
         partesIds: evento.partesIds || [],
         atualizadoEm: now,
+        ...conclusao(form.status, evento),
       };
       await db.eventos.put(updated);
       await addHistorico(evento.id, "evento", "edicao", `Evento "${form.titulo}" editado`,
@@ -87,6 +91,7 @@ export function EventoDialog({ open, onOpenChange, evento, processoId, initialDa
       await db.eventos.add({
         id, ...form, partesIds: [],
         criadoPor: currentUser?.id || "", criadoEm: now, atualizadoEm: now,
+        ...conclusao(form.status),
       });
       await addHistorico(id, "evento", "criacao", `Evento "${form.titulo}" criado`,
         currentUser?.id || "", currentUser?.nome || "");
@@ -165,6 +170,7 @@ export function EventoDialog({ open, onOpenChange, evento, processoId, initialDa
               <label className="text-sm text-muted-foreground">Status</label>
               <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as Evento["status"] })} className={inputCls}>
                 <option value="pendente">Pendente</option>
+                <option value="em_andamento">Em andamento</option>
                 <option value="concluido">Concluído</option>
                 <option value="cancelado">Cancelado</option>
               </select>

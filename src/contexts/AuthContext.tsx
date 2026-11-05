@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { db } from "@/lib/db";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { dbProprio as db, definirBancoAtivo, type LexcoDB } from "@/lib/db";
+import { permissoesDe, MODELOS_PERMISSAO, type Permissoes } from "@/lib/permissoes";
+import { abrirBancoAmbiente, listarAmbientes, type AmbienteSalvo } from "@/lib/compartilhamento/sync";
 import { hashPassword, verifyPassword, getSessionUserId, setSessionUserId, clearSession } from "@/lib/auth";
 import { getDesktopGoogle, getLastDriveSync, googleDrive } from "@/lib/googleDrive";
 import { solicitarEnvioImediato } from "@/lib/autoBackup";
@@ -8,7 +10,23 @@ import type { User, UserPreferences } from "@/types";
 type AuthResult = { success: boolean; error?: string };
 
 interface AuthContextType {
+  /**
+   * Usuário EFETIVO. No ambiente compartilhado é o cadastro do convidado no
+   * ambiente do administrador (id, nome e permissões de lá).
+   */
   currentUser: User | null;
+  /** Usuário deste computador (perfil, senha, preferências). */
+  usuarioLocal: User | null;
+  /** null = meu ambiente. */
+  ambiente: AmbienteSalvo | null;
+  ambientesDisponiveis: AmbienteSalvo[];
+  /** Já escolheu o ambiente nesta sessão (tela de escolha só aparece uma vez). */
+  ambienteEscolhido: boolean;
+  entrarAmbiente: (id: string | null) => void;
+  recarregarAmbientes: () => void;
+  /** Atualiza dados do ambiente atual (permissões recebidas no pacote etc.). */
+  atualizarAmbienteAtual: (amb: AmbienteSalvo) => void;
+  permissoes: Permissoes;
   loading: boolean;
   login: (email: string, password: string) => Promise<AuthResult>;
   /** Abre o login do Google no navegador; entra no usuário local com aquele e-mail (ou cria um). */
@@ -44,6 +62,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [localUsers, setLocalUsers] = useState<AuthContextType["localUsers"]>([]);
+  const [ambiente, setAmbiente] = useState<AmbienteSalvo | null>(null);
+  const [ambientesDisponiveis, setAmbientesDisponiveis] = useState<AmbienteSalvo[]>([]);
+  const [ambienteEscolhido, setAmbienteEscolhido] = useState(false);
+
+  const recarregarAmbientes = useCallback(() => {
+    setAmbientesDisponiveis(currentUser ? listarAmbientes(currentUser.id) : []);
+  }, [currentUser]);
+  useEffect(() => { recarregarAmbientes(); }, [recarregarAmbientes]);
+
+  /** Troca o banco das telas: o próprio (null) ou a cópia local de um ambiente compartilhado. */
+  const entrarAmbiente = useCallback((id: string | null) => {
+    const amb = id && currentUser ? listarAmbientes(currentUser.id).find((a) => a.id === id) ?? null : null;
+    definirBancoAtivo(amb ? bancoDoAmbiente(amb) : db);
+    setAmbiente(amb);
+    setAmbienteEscolhido(true);
+    sessionStorage.setItem(SESSAO_AMBIENTE, amb ? amb.id : "proprio");
+  }, [currentUser]);
+
+  const atualizarAmbienteAtual = useCallback((amb: AmbienteSalvo) => {
+    setAmbiente((a) => (a && a.id === amb.id ? amb : a));
+    setAmbientesDisponiveis((l) => l.map((x) => (x.id === amb.id ? amb : x)));
+  }, []);
 
   const refreshLocalUsers = useCallback(async () => {
     const users = await db.users.toArray();
@@ -59,6 +99,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (user && user.status !== "inativo") {
           setCurrentUser(user);
           applyUserTheme(user.preferencias);
+          // Recarregou a janela dentro de um ambiente compartilhado: volta para ele.
+          const sessao = sessionStorage.getItem(SESSAO_AMBIENTE);
+          const amb = sessao && sessao !== "proprio" ? listarAmbientes(user.id).find((a) => a.id === sessao) : null;
+          if (amb) {
+            definirBancoAtivo(bancoDoAmbiente(amb));
+            setAmbiente(amb);
+          }
+          if (sessao) setAmbienteEscolhido(true);
         } else {
           clearSession();
         }
@@ -172,6 +220,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await googleDrive.signOut().catch((e) => console.error("Falha ao esquecer a conta Google:", e));
     }
     clearSession();
+    definirBancoAtivo(db);
+    setAmbiente(null);
+    setAmbienteEscolhido(false);
+    sessionStorage.removeItem(SESSAO_AMBIENTE);
     setCurrentUser(null);
   };
 
@@ -184,15 +236,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshLocalUsers();
   };
 
+  // Dentro de um ambiente compartilhado ninguém gerencia usuários (isso é do administrador de lá).
   const podeGerenciarUsuarios =
-    !!currentUser &&
+    !!currentUser && !ambiente &&
     (currentUser.perfil === "admin" || !localUsers.some((u) => u.perfil === "admin" && u.status !== "inativo"));
+
+  const usuarioEfetivo = useMemo<User | null>(() => {
+    if (!currentUser || !ambiente) return currentUser;
+    return {
+      ...currentUser,
+      id: ambiente.voceId,
+      nome: ambiente.voceNome,
+      perfil: ambiente.perfil ?? "colaborador",
+      permissoes: ambiente.permissoes,
+      senha: "",
+    };
+  }, [currentUser, ambiente]);
+
+  const permissoes = useMemo<Permissoes>(() => {
+    // Antes da 1ª sincronização (permissões ainda não chegaram): só leitura.
+    if (ambiente) return ambiente.permissoes ?? MODELOS_PERMISSAO[0].permissoes;
+    return permissoesDe(currentUser);
+  }, [currentUser, ambiente]);
 
   return (
     <AuthContext.Provider
       value={{
-        currentUser, loading, login, loginWithGoogle, register, logout, switchUser: logout,
+        currentUser: usuarioEfetivo, usuarioLocal: currentUser, loading, login, loginWithGoogle, register, logout, switchUser: logout,
         updateUser, localUsers, refreshLocalUsers, podeGerenciarUsuarios,
+        ambiente, ambientesDisponiveis, ambienteEscolhido, entrarAmbiente, recarregarAmbientes, atualizarAmbienteAtual, permissoes,
       }}
     >
       {children}
@@ -201,6 +273,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+const SESSAO_AMBIENTE = "lexco_ambiente_sessao";
+
+// Uma instância por ambiente (a captura de alterações é instalada uma única vez).
+const bancos = new Map<string, LexcoDB>();
+function bancoDoAmbiente(amb: AmbienteSalvo): LexcoDB {
+  let b = bancos.get(amb.id);
+  if (!b) {
+    b = abrirBancoAmbiente(amb);
+    bancos.set(amb.id, b);
+  }
+  return b;
+}
 
 /** O primeiro usuário cadastrado no computador vira administrador. */
 async function perfilInicial(): Promise<User["perfil"]> {

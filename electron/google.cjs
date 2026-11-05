@@ -27,7 +27,9 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3";
-const FOLDER_NAME = "Lexco Backups";
+// Uma pasta por edição: "Lexco Backups" (completa) e "Lexco SPU Backups" — evita que o
+// backup automático de uma edição sobrescreva o da outra na mesma conta Google.
+const FOLDER_NAME = `${app.getName() || "Lexco"} Backups`;
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -469,6 +471,183 @@ async function deleteBackup(id) {
   await gfetch(`${DRIVE_API}/files/${id}`, { method: "DELETE" });
 }
 
+// ---------- Documentos dos processos ----------
+//
+// "<App> Documentos/<número - título do processo>/arquivo". As pastas são achadas
+// pelos appProperties (não pelo nome), então renomear no Drive não quebra nada.
+
+const DOCS_ROOT_NAME = `${app.getName() || "Lexco"} Documentos`;
+const SHARE_FOLDER_NAME = `${app.getName() || "Lexco"} Compartilhamento`;
+const MAX_DOC_BYTES = 50 * 1024 * 1024;
+
+const esc = (s) => String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+
+/** Acha (por appProperties) ou cria uma pasta. */
+async function ensureFolderBy(props, name, parentId) {
+  const conds = Object.entries(props).map(([k, v]) => `appProperties has { key='${esc(k)}' and value='${esc(v)}' }`);
+  const query = [`mimeType = '${FOLDER_MIME}'`, "trashed = false", ...conds, parentId ? `'${parentId}' in parents` : ""].filter(Boolean).join(" and ");
+  const found = await (await gfetch(`${DRIVE_API}/files?q=${q(query)}&fields=files(id)&pageSize=1`)).json();
+  if (found.files?.[0]?.id) return found.files[0].id;
+  const created = await (
+    await gfetch(`${DRIVE_API}/files?fields=id`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, mimeType: FOLDER_MIME, appProperties: props, ...(parentId ? { parents: [parentId] } : {}) }),
+    })
+  ).json();
+  return created.id;
+}
+
+const docsRoot = () => ensureFolderBy({ lexco: "documentos", app: app.getName() || "Lexco" }, DOCS_ROOT_NAME);
+
+const nomeSeguro = (s, max = 120) => String(s || "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max) || "Sem nome";
+
+/** Envio "resumable" genérico (metadados + conteúdo binário). */
+async function enviarArquivo(meta, dados, mime, existenteId) {
+  const init = await gfetch(
+    existenteId
+      ? `${DRIVE_UPLOAD}/files/${existenteId}?uploadType=resumable&fields=id,webViewLink`
+      : `${DRIVE_UPLOAD}/files?uploadType=resumable&fields=id,webViewLink`,
+    {
+      method: existenteId ? "PATCH" : "POST",
+      headers: {
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": mime,
+        "X-Upload-Content-Length": String(dados.length),
+      },
+      body: JSON.stringify(existenteId ? {} : meta),
+    },
+  );
+  const location = init.headers.get("location");
+  if (!location) throw new Error("O Google Drive não iniciou o envio.");
+  return (await gfetch(location, { method: "PUT", headers: { "Content-Type": mime }, body: dados })).json();
+}
+
+/**
+ * Anexa um documento à pasta do processo.
+ * `compartilharCom`: e-mail que recebe leitura (convidado enviando para o administrador).
+ */
+async function docUpload(args) {
+  const { processoId, pastaNome, nome, mime, dados, compartilharCom } = args || {};
+  if (typeof processoId !== "string" || !/^[\w-]{6,}$/.test(processoId)) throw new Error("Processo inválido.");
+  if (!(dados instanceof Uint8Array)) throw new Error("Arquivo inválido.");
+  if (dados.length > MAX_DOC_BYTES) throw new Error("Arquivo maior que 50 MB.");
+  const tipo = typeof mime === "string" && /^[\w.+-]+\/[\w.+-]+$/.test(mime) ? mime : "application/octet-stream";
+  const raiz = await docsRoot();
+  const pasta = await ensureFolderBy({ lexco: "processo", processoId }, nomeSeguro(pastaNome), raiz);
+  const file = await enviarArquivo(
+    { name: nomeSeguro(nome, 200), parents: [pasta], appProperties: { lexco: "documento", processoId } },
+    Buffer.from(dados),
+    tipo,
+  );
+  if (compartilharCom) await compartilharComEmail(file.id, compartilharCom, "reader").catch(() => {});
+  return { id: file.id, link: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`, dono: loadAuth()?.email || "" };
+}
+
+async function docDelete(id) {
+  if (!validId(id)) throw new Error("Arquivo inválido.");
+  // Vai para a lixeira do Drive (recuperável por 30 dias), não é apagado de vez.
+  await gfetch(`${DRIVE_API}/files/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
+  });
+}
+
+const emailValido = (e) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+async function compartilharComEmail(fileId, email, role) {
+  if (!validId(fileId) || !emailValido(email)) throw new Error("Compartilhamento inválido.");
+  await gfetch(`${DRIVE_API}/files/${fileId}/permissions?sendNotificationEmail=false`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "user", role, emailAddress: email }),
+  });
+}
+
+/** Libera (ou retira) a leitura da pasta de documentos para um usuário convidado. */
+async function docsCompartilhar(email, permitir) {
+  if (!emailValido(email)) throw new Error("E-mail inválido.");
+  const raiz = await docsRoot();
+  const perms = await (await gfetch(`${DRIVE_API}/files/${raiz}/permissions?fields=permissions(id,emailAddress)`)).json();
+  const existente = (perms.permissions || []).find((p) => (p.emailAddress || "").toLowerCase() === email.toLowerCase());
+  if (permitir && !existente) await compartilharComEmail(raiz, email, "reader");
+  if (!permitir && existente) await gfetch(`${DRIVE_API}/files/${raiz}/permissions/${existente.id}`, { method: "DELETE" });
+  return true;
+}
+
+// ---------- Arquivos de troca do ambiente compartilhado ----------
+//
+// Conteúdo SEMPRE cifrado (AES-256-GCM) no React antes de chegar aqui. O arquivo
+// fica com leitura "qualquer pessoa com o link" porque, com o escopo drive.file,
+// o app de outra conta Google não consegue abrir arquivos compartilhados por e-mail.
+// Sem a chave (que só existe no código de convite), o conteúdo é ilegível.
+
+const shareRoot = () => ensureFolderBy({ lexco: "compartilhamento", app: app.getName() || "Lexco" }, SHARE_FOLDER_NAME);
+
+async function sharePublish(id, name, content) {
+  // Arquivo de troca fica com link público: só aceita conteúdo já cifrado pelo app.
+  if (typeof content !== "string" || !content.startsWith("LXE1.") || content.length > 80 * 1024 * 1024) throw new Error("Conteúdo inválido.");
+  if (id && !validId(id)) throw new Error("Arquivo inválido.");
+  const dados = Buffer.from(content, "utf8");
+  if (id) {
+    const ok = await gfetch(`${DRIVE_API}/files/${id}?fields=id,trashed,appProperties`).then((r) => r.json()).catch(() => null);
+    // Nunca sobrescreve um arquivo que não seja de troca (ex.: um backup).
+    if (ok && !ok.trashed && ok.appProperties?.lexco === "troca") {
+      await enviarArquivo({}, dados, "text/plain", id);
+      return id;
+    }
+  }
+  const pasta = await shareRoot();
+  const file = await enviarArquivo(
+    { name: nomeSeguro(name), parents: [pasta], mimeType: "text/plain", appProperties: { lexco: "troca" } },
+    dados,
+    "text/plain",
+  );
+  await gfetch(`${DRIVE_API}/files/${file.id}/permissions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "anyone", role: "reader", allowFileDiscovery: false }),
+  }).catch(async (e) => {
+    await gfetch(`${DRIVE_API}/files/${file.id}`, { method: "DELETE" }).catch(() => {});
+    throw new Error(`O Google Drive desta conta não permite compartilhar por link (${e.message}).`);
+  });
+  return file.id;
+}
+
+async function shareDelete(id) {
+  if (!validId(id)) throw new Error("Arquivo inválido.");
+  const info = await gfetch(`${DRIVE_API}/files/${id}?fields=appProperties`).then((r) => r.json()).catch(() => null);
+  if (info && info.appProperties?.lexco !== "troca") throw new Error("Este arquivo não é de compartilhamento.");
+  await gfetch(`${DRIVE_API}/files/${id}`, { method: "DELETE" }).catch((e) => {
+    if (!/404|not found/i.test(e.message)) throw e;
+  });
+}
+
+/** Lê um arquivo de troca de OUTRA conta (sem autenticação, pelo link). */
+async function shareRead(id) {
+  if (!validId(id)) throw new Error("Arquivo inválido.");
+  let res;
+  try {
+    res = await fetch(`https://drive.google.com/uc?export=download&id=${id}&t=${Date.now()}`, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(60_000),
+      headers: { "Cache-Control": "no-cache" },
+    });
+  } catch {
+    throw new Error("Sem conexão com o Google Drive.");
+  }
+  if (res.status === 404 || res.status === 410) {
+    const e = new Error("REMOVIDO");
+    throw e;
+  }
+  if (!res.ok) throw new Error(`Google Drive indisponível (HTTP ${res.status}).`);
+  const texto = await res.text();
+  // Arquivo removido/sem permissão vira uma página HTML do Google.
+  if (/^\s*</.test(texto)) throw new Error(/Not Found|não encontrado|não existe|does not exist/i.test(texto) ? "REMOVIDO" : "Arquivo indisponível no Google Drive.");
+  return texto;
+}
+
 // ---------- IPC ----------
 
 /**
@@ -503,6 +682,12 @@ function registerGoogleIpc(ipcMain, getWindow) {
   ipcMain.handle("google:list", wrap(listBackups));
   ipcMain.handle("google:download", wrap(downloadBackup));
   ipcMain.handle("google:delete", wrap(deleteBackup));
+  ipcMain.handle("google:docUpload", wrap(docUpload));
+  ipcMain.handle("google:docDelete", wrap(docDelete));
+  ipcMain.handle("google:docsCompartilhar", wrap(docsCompartilhar));
+  ipcMain.handle("google:sharePublish", wrap(sharePublish));
+  ipcMain.handle("google:shareDelete", wrap(shareDelete));
+  ipcMain.handle("google:shareRead", wrap(shareRead));
 }
 
 module.exports = { registerGoogleIpc };

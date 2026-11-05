@@ -1,11 +1,11 @@
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Search, Eye, Edit, Shield } from "lucide-react";
+import { Search, Shield, KeyRound, Link2, Clock } from "lucide-react";
+import { UsuarioAcessoDialog } from "@/components/UsuarioAcessoDialog";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { NovoUsuarioDialog } from "@/components/NovoUsuarioDialog";
-import { db } from "@/lib/db";
+import { dbProprio as db } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import type { User } from "@/types";
 
@@ -18,7 +18,7 @@ const perfilBadge: Record<string, string> = {
 const Usuarios = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
-  const navigate = useNavigate();
+  const [selecionado, setSelecionado] = useState<User | null>(null);
 
   const { refreshLocalUsers } = useAuth();
   // Atualiza também a lista do contexto (permissões dependem de quem é admin).
@@ -55,6 +55,7 @@ const Usuarios = () => {
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden lg:table-cell">Cargo</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">Perfil</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">Status</th>
+                <th className="text-left py-3 px-4 text-muted-foreground font-medium hidden md:table-cell">Acesso remoto</th>
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">Ações</th>
               </tr></thead>
               <tbody>
@@ -81,8 +82,15 @@ const Usuarios = () => {
                       </span>
                     </td>
                     <td className="py-3 px-4"><StatusBadge status={u.status} /></td>
+                    <td className="py-3 px-4 hidden md:table-cell text-xs">
+                      {u.acessoRemoto?.caixaId ? <span className="text-success flex items-center gap-1"><Link2 className="h-3.5 w-3.5" /> Conectado</span>
+                        : u.acessoRemoto ? <span className="text-warning flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Aguardando resposta</span>
+                          : <span className="text-muted-foreground">—</span>}
+                    </td>
                     <td className="py-3 px-4">
-                      <Button variant="ghost" size="icon" className="h-8 w-8"><Eye className="h-4 w-4" /></Button>
+                      <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setSelecionado(u)}>
+                        <KeyRound className="h-3.5 w-3.5" /> Acessos
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -91,6 +99,7 @@ const Usuarios = () => {
           </div>
         </div>
       </div>
+      <UsuarioAcessoDialog user={selecionado} open={!!selecionado} onOpenChange={(v) => !v && setSelecionado(null)} onSaved={load} />
     </AppLayout>
   );
 };

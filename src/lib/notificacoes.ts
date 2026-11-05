@@ -41,12 +41,16 @@ export function gerarNotificacoes(
 
   if (ligado("notifAgenda")) {
     for (const e of eventos) {
-      if (e.status !== "pendente" || (e.data !== hoje && e.data !== amanha)) continue;
+      const aberto = e.status === "pendente" || e.status === "em_andamento";
+      if (!aberto || (e.data !== hoje && e.data !== amanha)) continue;
       const dia = e.data === hoje ? "hoje" : "amanhã";
+      const tarefa = e.tipo === "tarefa";
       out.push({
         id: `evento-${e.id}-${e.data}-${e.horaInicio || ""}`,
         tipo: e.data === hoje ? "aviso" : "info",
-        titulo: `Compromisso ${dia}${e.horaInicio ? ` às ${e.horaInicio}` : ""}`,
+        titulo: tarefa
+          ? `Tarefa vence ${dia}${e.horaInicio ? ` às ${e.horaInicio}` : ""}`
+          : `Compromisso ${dia}${e.horaInicio ? ` às ${e.horaInicio}` : ""}`,
         descricao: e.titulo,
         url: "/agenda",
         ordem: `${e.data === hoje ? 3 : 4}-${e.horaInicio || ""}`,

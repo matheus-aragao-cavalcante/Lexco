@@ -6,10 +6,12 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, excluirParte, podeExcluirParte } from "@/lib/db";
 import { NovaParteDialog } from "@/components/NovaParteDialog";
+import { useAuth } from "@/contexts/AuthContext";
 import type { ParteInteressada } from "@/types";
 import { toast } from "sonner";
 
 const PartesInteressadas = () => {
+  const { permissoes } = useAuth();
   const [partes, setPartes] = useState<ParteInteressada[]>([]);
   const [search, setSearch] = useState("");
   const [tipoFilter, setTipoFilter] = useState("todos");
@@ -58,7 +60,7 @@ const PartesInteressadas = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Partes Interessadas</h1>
             <p className="text-muted-foreground text-sm mt-1">Cadastro de pessoas e entidades vinculadas aos processos</p>
           </div>
-          <NovaParteDialog onSaved={loadPartes} />
+          {permissoes.cadastrarProcessos && <NovaParteDialog onSaved={loadPartes} />}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -115,7 +117,7 @@ const PartesInteressadas = () => {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/partes/${p.id}`)}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4" /></Button>
+                        {permissoes.excluirProcessos && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4" /></Button>}
                       </div>
                     </td>
                   </tr>

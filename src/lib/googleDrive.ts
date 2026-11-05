@@ -33,6 +33,27 @@ export const googleDrive = {
   list: () => unwrap(api().list()),
   download: (id: string) => unwrap(api().download(id)),
   remove: (id: string) => unwrap(api().delete(id)),
+  docUpload: (args: Parameters<LexcoDesktopAPI["google"]["docUpload"]>[0]) => unwrap(api().docUpload(args)),
+  docDelete: (id: string) => unwrap(api().docDelete(id)),
+  docsCompartilhar: (email: string, permitir: boolean) => unwrap(api().docsCompartilhar(email, permitir)),
+  sharePublish: (id: string | null, name: string, content: string) => unwrap(api().sharePublish(id, name, content)),
+  shareDelete: (id: string) => unwrap(api().shareDelete(id)),
+  shareRead: (id: string) => unwrap(api().shareRead(id)),
+};
+
+/** Consultas públicas (DataJud/DJEN) — feitas pelo processo principal. */
+export const consultaPublica = {
+  disponivel: () => !!window.lexcoDesktop?.consulta,
+  datajud: (alias: string, numero: string) => {
+    const c = window.lexcoDesktop?.consulta;
+    if (!c) throw new Error("A consulta automática está disponível no app de computador.");
+    return unwrap(c.datajud(alias, numero));
+  },
+  djen: (numero: string) => {
+    const c = window.lexcoDesktop?.consulta;
+    if (!c) throw new Error("A consulta automática está disponível no app de computador.");
+    return unwrap(c.djen(numero));
+  },
 };
 
 /** Último backup enviado deste computador PARA esta conta Google. */

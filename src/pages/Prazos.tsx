@@ -14,7 +14,7 @@ import type { Prazo, Processo, User } from "@/types";
 import { toast } from "sonner";
 
 const Prazos = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, permissoes } = useAuth();
   const [view, setView] = useState<"lista" | "timeline">("lista");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [prazos, setPrazos] = useState<Prazo[]>([]);
@@ -88,7 +88,7 @@ const Prazos = () => {
             <h1 className="text-2xl font-heading font-semibold text-foreground">Prazos</h1>
             <p className="text-muted-foreground text-sm mt-1">Controle de prazos jurídicos</p>
           </div>
-          <Button className="gap-2" onClick={handleNew}><Plus className="h-4 w-4" /> Novo Prazo</Button>
+          {permissoes.editarProcessos && <Button className="gap-2" onClick={handleNew}><Plus className="h-4 w-4" /> Novo Prazo</Button>}
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -163,7 +163,7 @@ const Prazos = () => {
                         <td className="py-3 px-4 text-foreground font-medium">{formatDate(p.dataLimite)}{p.hora ? ` ${p.hora}` : ""}</td>
                         <td className="py-3 px-4"><StatusBadge status={statusEfetivoPrazo(p, today)} /></td>
                         <td className="py-3 px-4">
-                          <div className="flex justify-end gap-1">
+                          {permissoes.editarProcessos && <div className="flex justify-end gap-1">
                             {p.status !== "cumprido" && (
                               <Button size="icon" variant="ghost" onClick={() => handleConcluir(p)} title="Marcar como cumprido">
                                 <CheckCheck className="h-4 w-4 text-success" />
@@ -175,7 +175,7 @@ const Prazos = () => {
                             <Button size="icon" variant="ghost" onClick={() => setConfirmDel(p)} title="Excluir">
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
-                          </div>
+                          </div>}
                         </td>
                       </tr>
                     );

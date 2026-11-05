@@ -12,6 +12,7 @@ const { app, BrowserWindow, protocol, net, shell, ipcMain } = require("electron"
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { registerGoogleIpc } = require("./google.cjs");
+const { registerConsultaIpc } = require("./consulta.cjs");
 
 /** Servidor do Vite: só em desenvolvimento e só em endereço local (nunca no app instalado). */
 function resolveDevUrl() {
@@ -80,7 +81,7 @@ function createWindow() {
     height: 860,
     minWidth: 1024,
     minHeight: 640,
-    title: "Lexco — Gestão Jurídica",
+    title: app.getName(), // "Lexco" ou "Lexco SPU" (definido no build)
     icon: path.join(__dirname, "..", "public", "favicon.ico"),
     autoHideMenuBar: true,
     backgroundColor: "#181d25", // mesma cor da tela de abertura (evita "piscar" branco)
@@ -120,6 +121,7 @@ app.on("second-instance", () => {
 app.whenReady().then(() => {
   registerAppProtocol();
   registerGoogleIpc(ipcMain, () => mainWindow);
+  registerConsultaIpc(ipcMain);
   createWindow();
 });
 

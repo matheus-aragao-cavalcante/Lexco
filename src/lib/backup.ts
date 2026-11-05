@@ -1,4 +1,5 @@
-import { db } from "@/lib/db";
+import { dbProprio as db } from "@/lib/db";
+// Backup e restauração SEMPRE no banco próprio (nunca no de um ambiente compartilhado).
 
 /**
  * Backup completo do banco local (Dexie).

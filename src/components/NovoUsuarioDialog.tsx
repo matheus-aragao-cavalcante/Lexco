@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { db } from "@/lib/db";
+import { dbProprio as db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
+import type { User } from "@/types";
 
 export function NovoUsuarioDialog({ onSaved }: { onSaved?: () => void }) {
   const [open, setOpen] = useState(false);
@@ -12,14 +13,15 @@ export function NovoUsuarioDialog({ onSaved }: { onSaved?: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nome || !form.email || !form.senha) { toast.error("Preencha os campos obrigatórios"); return; }
-    if (form.senha.length < 4) { toast.error("Senha deve ter no mínimo 4 caracteres"); return; }
+    if (!form.nome || !form.email) { toast.error("Preencha nome e e-mail"); return; }
+    // Senha é opcional: quem só acessa de outro computador (convite) não entra por aqui.
+    if (form.senha && form.senha.length < 4) { toast.error("Senha deve ter no mínimo 4 caracteres"); return; }
     const existing = await db.users.where("email").equals(form.email.toLowerCase().trim()).first();
     if (existing) { toast.error("Email já cadastrado"); return; }
     const now = new Date().toISOString();
     await db.users.add({
       id: crypto.randomUUID(), nome: form.nome, email: form.email.toLowerCase().trim(),
-      senha: await hashPassword(form.senha), cargo: form.cargo, perfil: form.perfil as any,
+      senha: form.senha ? await hashPassword(form.senha) : "", cargo: form.cargo, perfil: form.perfil as User["perfil"],
       status: "ativo", preferencias: { tema: "light", notifPrazo1Dia: true, notifPrazoHoje: true, notifAgenda: true, notifPendencias: true },
       criadoEm: now, atualizadoEm: now,
     });
@@ -45,12 +47,12 @@ export function NovoUsuarioDialog({ onSaved }: { onSaved?: () => void }) {
               <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className={inputCls} />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">Email *</label>
+              <label className="text-sm text-muted-foreground">Email (de preferência a conta Google) *</label>
               <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputCls} />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">Senha *</label>
-              <input type="password" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} placeholder="Mínimo 4 caracteres" className={inputCls} />
+              <label className="text-sm text-muted-foreground">Senha (para entrar neste computador)</label>
+              <input type="password" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} placeholder="Opcional — mín. 4 caracteres" className={inputCls} />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm text-muted-foreground">Cargo</label>
@@ -65,6 +67,7 @@ export function NovoUsuarioDialog({ onSaved }: { onSaved?: () => void }) {
               </select>
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">Depois de cadastrar, use "Acessos" na lista para definir as permissões e, se quiser, convidar para acessar de outro computador.</p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
             <Button type="submit">Cadastrar</Button>

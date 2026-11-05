@@ -5,7 +5,7 @@ import { User, Briefcase, Bell, Shield, Download, Upload, Save, Camera } from "l
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { db } from "@/lib/db";
+import { db, dbProprio } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth";
 import { ESTADOS_CIVIS, UFS_BRASIL } from "@/types";
 import { backupFileName, createBackup, parseBackup, serializeBackup, type LexcoBackup } from "@/lib/backup";
@@ -23,7 +23,8 @@ const tabs = [
 ];
 
 const PerfilUsuario = () => {
-  const { currentUser, updateUser, podeGerenciarUsuarios } = useAuth();
+  // Perfil é sempre do usuário deste computador (mesmo dentro de um ambiente compartilhado).
+  const { usuarioLocal: currentUser, updateUser, podeGerenciarUsuarios, permissoes } = useAuth();
   // ?aba=exportar abre direto na aba (link "Gerenciar" do botão de backup no topo)
   const { search } = useLocation();
   const [activeTab, setActiveTab] = useState(() => new URLSearchParams(search).get("aba") || "pessoal");
@@ -54,7 +55,7 @@ const PerfilUsuario = () => {
     const email = (form.email || "").trim().toLowerCase();
     if (!nome) { toast.error("Informe o nome"); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast.error("E-mail inválido"); return; }
-    const outro = await db.users.where("email").equals(email).first();
+    const outro = await dbProprio.users.where("email").equals(email).first();
     if (outro && outro.id !== currentUser.id) { toast.error("Este e-mail já é usado por outro usuário"); return; }
 
     const nomeExibicao = (form.nomeExibicao ?? currentUser.preferencias?.nomeExibicao ?? "").trim();
@@ -350,7 +351,7 @@ const PerfilUsuario = () => {
                   </p>
                 )}
                 <hr className="border-border" />
-                <div className="space-y-3">
+                {permissoes.exportar ? <div className="space-y-3">
                   <h3 className="text-sm font-medium text-foreground">Exportar CSV</h3>
                   <p className="text-xs text-muted-foreground">Fotos e arquivos anexados não são incluídos no CSV, apenas metadados textuais.</p>
                   <div className="flex gap-2 flex-wrap">
@@ -359,7 +360,7 @@ const PerfilUsuario = () => {
                     <Button size="sm" variant="outline" onClick={() => handleExportCSV("partes")}>Partes</Button>
                     <Button size="sm" variant="outline" onClick={() => handleExportCSV("eventos")}>Eventos</Button>
                   </div>
-                </div>
+                </div> : <p className="text-xs text-muted-foreground">Você não tem permissão para exportar dados.</p>}
                 {podeGerenciarUsuarios && (<>
                 <hr className="border-border" />
                 <div className="space-y-3">

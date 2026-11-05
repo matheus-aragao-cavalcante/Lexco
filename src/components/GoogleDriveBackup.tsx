@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { parseBackup, type LexcoBackup } from "@/lib/backup";
 import { formatBytes, getDesktopGoogle, googleDrive } from "@/lib/googleDrive";
 import { useDriveBackup } from "@/contexts/DriveBackupContext";
+import { EDICAO } from "@/lib/edicao";
 
 interface Props {
   /** Entrega o backup baixado para a tela abrir o diálogo de restauração. */
@@ -87,7 +88,7 @@ export function GoogleDriveBackup({ onRestore }: Props) {
       <Section>
         <p className="text-xs text-muted-foreground">
           Conecte sua conta Google para guardar backups no <strong>seu</strong> Google Drive, na pasta
-          "Lexco Backups". O Lexco só acessa os arquivos que ele mesmo cria.
+          "{EDICAO.nomeApp} Backups". O {EDICAO.nomeApp} só acessa os arquivos que ele mesmo cria.
         </p>
         {b.conectando ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

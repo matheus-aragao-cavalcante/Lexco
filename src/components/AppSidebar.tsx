@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { EDICAO } from "@/lib/edicao";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -54,8 +55,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="animate-slide-in">
-              <h1 className="text-sm font-bold text-sidebar-accent-foreground tracking-tight">Lexco</h1>
-              <p className="text-[10px] text-sidebar-muted">Gestão Jurídica</p>
+              <h1 className="text-sm font-bold text-sidebar-accent-foreground tracking-tight">{EDICAO.nomeApp}</h1>
+              <p className="text-[10px] text-sidebar-muted">{EDICAO.subtitulo}</p>
             </div>
           )}
         </div>

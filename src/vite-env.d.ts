@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  /** "spu" gera a versão SPU/Pública; ausente = versão completa. */
+  readonly VITE_EDICAO?: "completa" | "spu";
+}
+
 /** Resultado padrão das chamadas ao processo principal (electron/google.cjs). */
 type LexcoIpcResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -37,6 +42,19 @@ interface LexcoDesktopAPI {
     list(): Promise<LexcoIpcResult<LexcoDriveFile[]>>;
     download(id: string): Promise<LexcoIpcResult<string>>;
     delete(id: string): Promise<LexcoIpcResult<void>>;
+    docUpload(args: {
+      processoId: string; pastaNome: string; nome: string; mime: string; dados: Uint8Array; compartilharCom?: string;
+    }): Promise<LexcoIpcResult<{ id: string; link: string; dono: string }>>;
+    docDelete(id: string): Promise<LexcoIpcResult<void>>;
+    docsCompartilhar(email: string, permitir: boolean): Promise<LexcoIpcResult<boolean>>;
+    sharePublish(id: string | null, name: string, content: string): Promise<LexcoIpcResult<string>>;
+    shareDelete(id: string): Promise<LexcoIpcResult<void>>;
+    /** Erro "REMOVIDO" quando o arquivo não existe mais (acesso revogado). */
+    shareRead(id: string): Promise<LexcoIpcResult<string>>;
+  };
+  consulta: {
+    datajud(alias: string, numero: string): Promise<LexcoIpcResult<unknown>>;
+    djen(numero: string): Promise<LexcoIpcResult<unknown>>;
   };
 }
 
