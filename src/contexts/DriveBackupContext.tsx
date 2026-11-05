@@ -5,7 +5,7 @@ import { backupFileName, createBackup, serializeBackup } from "@/lib/backup";
 import { getDesktopGoogle, getLastDriveSync, googleDrive, setLastDriveSync } from "@/lib/googleDrive";
 import {
   autoBackupLigado, definirAutoBackup, deveEnviar, instalarRastreamento, limparPendente,
-  nomeBackupAutomatico, pendenteDesde,
+  nomeBackupAutomatico, pendenteDesde, solicitarEnvioImediato,
 } from "@/lib/autoBackup";
 
 type Estado = "ocioso" | "enviando" | "erro";
@@ -43,11 +43,14 @@ export function DriveBackupProvider({ children }: { children: ReactNode }) {
   const [autoLigado, setAutoLigadoState] = useState(false);
   const [estado, setEstado] = useState<Estado>("ocioso");
   const [erro, setErro] = useState<string | null>(null);
-  const [ultimoBackup, setUltimoBackup] = useState<string | null>(getLastDriveSync());
+  const [ultimoBackup, setUltimoBackup] = useState<string | null>(null);
   const [pendente, setPendente] = useState(pendenteDesde() !== null);
   const [conectando, setConectando] = useState(false);
   const enviandoRef = useRef(false);
   const ultimoEnvioRef = useRef<number | null>(null);
+  // Identifica a sessão atual: um envio iniciado por outro usuário/conta é descartado.
+  const sessaoRef = useRef(0);
+  const emailRef = useRef("");
 
   useEffect(() => {
     instalarRastreamento();
@@ -64,13 +67,25 @@ export function DriveBackupProvider({ children }: { children: ReactNode }) {
 
   // Ao trocar de usuário (login/logout), relê status e preferência.
   useEffect(() => {
+    sessaoRef.current++;
+    ultimoEnvioRef.current = null;
     atualizarStatus();
     setAutoLigadoState(currentUser ? autoBackupLigado(currentUser.id) : false);
     setErro(null);
     setEstado("ocioso");
-  }, [currentUser, atualizarStatus]);
+  }, [currentUser?.id, atualizarStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const conectado = !!status?.connected;
+  const email = status?.email || "";
+
+  // Conta Google mudou: nova "sessão" de backup, último backup daquela conta.
+  useEffect(() => {
+    if (emailRef.current !== email) {
+      sessaoRef.current++;
+      emailRef.current = email;
+    }
+    setUltimoBackup(getLastDriveSync(email));
+  }, [email]);
 
   const enviar = useCallback(
     async (auto: boolean) => {
@@ -78,12 +93,17 @@ export function DriveBackupProvider({ children }: { children: ReactNode }) {
       enviandoRef.current = true;
       setEstado("enviando");
       const marca = pendenteDesde();
+      const sessao = sessaoRef.current;
+      const conta = emailRef.current;
       try {
         const backup = await createBackup();
-        const nome = auto ? nomeBackupAutomatico() : backupFileName(new Date(backup.createdAt));
-        await googleDrive.upload(nome, serializeBackup(backup), auto);
+        if (sessao !== sessaoRef.current) throw new Error("Usuário ou conta mudou durante o backup. Envio cancelado.");
+        const quando = new Date(backup.createdAt); // nome pelo instante do snapshot (virada de meia-noite)
+        const nome = auto ? nomeBackupAutomatico(quando) : backupFileName(quando);
+        await googleDrive.upload(nome, serializeBackup(backup), auto, conta);
+        if (sessao !== sessaoRef.current) return; // já trocou de sessão: não mexe no estado da nova
         limparPendente(marca);
-        setLastDriveSync(backup.createdAt);
+        setLastDriveSync(conta, backup.createdAt);
         setUltimoBackup(backup.createdAt);
         ultimoEnvioRef.current = Date.now();
         setErro(null);
@@ -123,6 +143,7 @@ export function DriveBackupProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     definirAutoBackup(currentUser.id, v);
     setAutoLigadoState(v);
+    if (v && !getLastDriveSync(email)) solicitarEnvioImediato(); // primeiro backup já
     toast.success(v ? "Backup automático ligado" : "Backup automático desligado");
   };
 
@@ -131,6 +152,7 @@ export function DriveBackupProvider({ children }: { children: ReactNode }) {
     try {
       const s = await googleDrive.connect();
       setStatus(s);
+      if (!getLastDriveSync(s.email)) solicitarEnvioImediato(); // dados já existentes vão no primeiro envio
       toast.success(`Google Drive conectado (${s.email})`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha ao conectar";
@@ -155,7 +177,7 @@ export function DriveBackupProvider({ children }: { children: ReactNode }) {
         disponivel,
         configurado: !!status?.configured,
         conectado,
-        email: status?.email || "",
+        email,
         autoLigado,
         setAutoLigado,
         estado,

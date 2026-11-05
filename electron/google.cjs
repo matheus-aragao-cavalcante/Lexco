@@ -67,7 +67,7 @@ function clearAuth() {
 
 // ---------- tokens ----------
 
-let accessToken = null; // { token, expiresAt }
+let accessToken = null; // { token, expiresAt, refreshToken } — refreshToken identifica a conta dona do token
 
 async function postToken(params, signal) {
   const res = await fetch(TOKEN_URL, {
@@ -86,12 +86,21 @@ async function postToken(params, signal) {
 }
 
 async function getAccessToken(forceRefresh = false) {
-  if (!forceRefresh && accessToken && accessToken.expiresAt - 60_000 > Date.now()) return accessToken.token;
   const auth = loadAuth();
   if (!auth) throw new Error("Conta Google não conectada.");
+  if (
+    !forceRefresh &&
+    accessToken &&
+    accessToken.refreshToken === auth.refreshToken &&
+    accessToken.expiresAt - 60_000 > Date.now()
+  ) {
+    return accessToken.token;
+  }
   try {
     const t = await postToken({ grant_type: "refresh_token", refresh_token: auth.refreshToken });
-    accessToken = { token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 };
+    // A conta mudou (logout/novo login) enquanto renovava: descarta este token.
+    if (loadAuth()?.refreshToken !== auth.refreshToken) throw new Error("A conta Google foi alterada durante a operação.");
+    accessToken = { token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000, refreshToken: auth.refreshToken };
     return accessToken.token;
   } catch (e) {
     if (e.code === "invalid_grant") {
@@ -272,7 +281,7 @@ async function connect() {
   const profile = profileFromIdToken(tokens.id_token || "");
   if (!profile.email || !profile.emailVerified) throw new Error("Não foi possível confirmar o e-mail da conta Google.");
 
-  accessToken = { token: tokens.access_token, expiresAt: Date.now() + tokens.expires_in * 1000 };
+  accessToken = { token: tokens.access_token, expiresAt: Date.now() + tokens.expires_in * 1000, refreshToken: tokens.refresh_token };
   saveAuth({ refreshToken: tokens.refresh_token, email: profile.email, name: profile.name });
   return {
     ...status(),
@@ -359,16 +368,28 @@ const MANTER_AUTOMATICOS = 30; // backups automáticos: 1 arquivo por dia, últi
  * - automático (`auto`): atualiza o arquivo do dia com o mesmo nome, se existir,
  *   e apaga os automáticos mais antigos que os últimos MANTER_AUTOMATICOS.
  */
-async function uploadBackup(name, content, auto = false) {
+async function uploadBackup(name, content, auto = false, contaEsperada = "") {
   if (typeof name !== "string" || !/^[\w.\- ]{1,120}$/.test(name)) throw new Error("Nome de arquivo inválido.");
   if (typeof content !== "string") throw new Error("Conteúdo inválido.");
-  if (typeof auto !== "boolean") throw new Error("Parâmetro inválido.");
+  if (typeof auto !== "boolean" || typeof contaEsperada !== "string") throw new Error("Parâmetro inválido.");
+
+  // A conta conectada não pode mudar no meio do envio (logout/troca de usuário):
+  // senão o backup de uma pessoa iria para o Drive de outra.
+  const inicial = loadAuth();
+  if (!inicial) throw new Error("Conta Google não conectada.");
+  if (contaEsperada && inicial.email !== contaEsperada) throw new Error("A conta Google conectada mudou. Backup cancelado.");
+  const mesmaConta = () => {
+    if (loadAuth()?.refreshToken !== inicial.refreshToken) throw new Error("A conta Google foi alterada durante o backup. Envio cancelado.");
+  };
+
   const folderId = await ensureFolder();
+  mesmaConta();
   const body = Buffer.from(content, "utf8");
 
   let existenteId = null;
   if (auto) {
-    const query = `'${folderId}' in parents and name = '${name}' and trashed = false`;
+    // Só reaproveita arquivo AUTOMÁTICO (um manual renomeado nunca é sobrescrito).
+    const query = `'${folderId}' in parents and name = '${name}' and trashed = false and appProperties has { key='tipo' and value='auto' }`;
     const found = await (await gfetch(`${DRIVE_API}/files?q=${q(query)}&fields=files(id)&pageSize=1`)).json();
     existenteId = found.files?.[0]?.id || null;
   }
@@ -400,6 +421,7 @@ async function uploadBackup(name, content, auto = false) {
   const location = init.headers.get("location");
   if (!location) throw new Error("O Google Drive não iniciou o envio.");
 
+  mesmaConta();
   const res = await gfetch(location, { method: "PUT", headers: { "Content-Type": "application/json" }, body });
   const file = await res.json();
   if (auto) await podarAutomaticos(folderId).catch(() => {}); // melhor esforço

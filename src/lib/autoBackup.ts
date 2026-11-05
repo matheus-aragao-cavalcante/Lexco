@@ -25,6 +25,11 @@ export function marcarPendente(agora = Date.now()) {
   localStorage.setItem(PENDENTE_KEY, String(agora));
 }
 
+/** Pede um envio no próximo ciclo (ex.: ao conectar ou ligar o automático). */
+export function solicitarEnvioImediato(agora = Date.now()) {
+  if (pendenteDesde() === null) marcarPendente(agora - ESPERA_SEM_ALTERACOES_MS);
+}
+
 /** Limpa só se não houve nova alteração durante o envio. */
 export function limparPendente(marcaEnviada: number | null) {
   if (marcaEnviada !== null && pendenteDesde() === marcaEnviada) localStorage.removeItem(PENDENTE_KEY);
@@ -35,7 +40,14 @@ let rastreando = false;
 export function instalarRastreamento() {
   if (rastreando) return;
   rastreando = true;
-  const marcar = () => marcarPendente();
+  // Nunca deixa uma falha do localStorage abortar a gravação no banco.
+  const marcar = () => {
+    try {
+      marcarPendente();
+    } catch {
+      /* ignora: no pior caso o próximo envio só acontece na próxima alteração */
+    }
+  };
   for (const table of db.tables) {
     table.hook("creating", marcar);
     table.hook("updating", marcar);
@@ -60,8 +72,9 @@ export function deveEnviar(
   { pendente, ultimoEnvio, agora }: { pendente: number | null; ultimoEnvio: number | null; agora: number },
 ): boolean {
   if (pendente === null) return false;
-  if (agora - pendente < ESPERA_SEM_ALTERACOES_MS) return false;
-  if (ultimoEnvio !== null && agora - ultimoEnvio < INTERVALO_MINIMO_MS) return false;
+  // Marcas "no futuro" = relógio do sistema foi ajustado para trás: não bloqueia.
+  if (pendente <= agora && agora - pendente < ESPERA_SEM_ALTERACOES_MS) return false;
+  if (ultimoEnvio !== null && ultimoEnvio <= agora && agora - ultimoEnvio < INTERVALO_MINIMO_MS) return false;
   return true;
 }
 

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import {
   ESPERA_SEM_ALTERACOES_MS, INTERVALO_MINIMO_MS, autoBackupLigado, definirAutoBackup, deveEnviar,
-  instalarRastreamento, limparPendente, marcarPendente, nomeBackupAutomatico, pendenteDesde,
+  instalarRastreamento, limparPendente, marcarPendente, nomeBackupAutomatico, pendenteDesde, solicitarEnvioImediato,
 } from "@/lib/autoBackup";
 
 beforeEach(() => localStorage.clear());
@@ -21,6 +21,20 @@ describe("deveEnviar", () => {
     const pendente = agora - ESPERA_SEM_ALTERACOES_MS;
     expect(deveEnviar({ pendente, ultimoEnvio: agora - 1000, agora })).toBe(false);
     expect(deveEnviar({ pendente, ultimoEnvio: agora - INTERVALO_MINIMO_MS, agora })).toBe(true);
+  });
+});
+
+describe("casos de borda", () => {
+  const agora = 10_000_000;
+  it("relógio ajustado para trás não trava o envio", () => {
+    expect(deveEnviar({ pendente: agora + 3_600_000, ultimoEnvio: agora + 3_600_000, agora })).toBe(true);
+  });
+  it("solicitarEnvioImediato deixa pronto para o próximo ciclo, sem sobrescrever pendência real", () => {
+    solicitarEnvioImediato(agora);
+    expect(deveEnviar({ pendente: pendenteDesde(), ultimoEnvio: null, agora })).toBe(true);
+    marcarPendente(agora);
+    solicitarEnvioImediato(agora);
+    expect(pendenteDesde()).toBe(agora);
   });
 });
 

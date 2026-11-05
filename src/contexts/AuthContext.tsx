@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { db } from "@/lib/db";
 import { hashPassword, verifyPassword, getSessionUserId, setSessionUserId, clearSession } from "@/lib/auth";
-import { getDesktopGoogle, googleDrive } from "@/lib/googleDrive";
+import { getDesktopGoogle, getLastDriveSync, googleDrive } from "@/lib/googleDrive";
+import { solicitarEnvioImediato } from "@/lib/autoBackup";
 import type { User, UserPreferences } from "@/types";
 
 type AuthResult = { success: boolean; error?: string };
@@ -92,6 +93,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: e instanceof Error ? e.message : "Falha no login com Google" };
     }
     const { email, name, picture } = result.profile;
+    // Primeiro login desta conta neste computador: o backup automático já envia os dados.
+    if (!getLastDriveSync(email)) solicitarEnvioImediato();
     // Primeiro pela conta Google vinculada (o e-mail local pode ter sido alterado no Perfil).
     // Pelo e-mail só vale se o usuário ainda não estiver vinculado a OUTRA conta Google —
     // senão quem controlasse aquele e-mail entraria na conta alheia.

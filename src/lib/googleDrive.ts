@@ -4,7 +4,7 @@
  * as operações e convertemos { ok, error } em exceções.
  */
 
-const LAST_SYNC_KEY = "lexco_drive_ultimo_backup";
+const lastSyncKey = (email: string) => `lexco_drive_ultimo_backup_${email.toLowerCase()}`;
 
 export function getDesktopGoogle() {
   return window.lexcoDesktop?.google ?? null;
@@ -28,18 +28,20 @@ export const googleDrive = {
   cancelConnect: () => unwrap(api().cancelConnect()),
   disconnect: () => unwrap(api().disconnect()),
   signOut: () => unwrap(api().signOut()),
-  upload: (name: string, content: string, auto = false) => unwrap(api().upload(name, content, auto)),
+  upload: (name: string, content: string, auto = false, contaEsperada = "") =>
+    unwrap(api().upload(name, content, auto, contaEsperada)),
   list: () => unwrap(api().list()),
   download: (id: string) => unwrap(api().download(id)),
   remove: (id: string) => unwrap(api().delete(id)),
 };
 
-export function getLastDriveSync(): string | null {
-  return localStorage.getItem(LAST_SYNC_KEY);
+/** Último backup enviado deste computador PARA esta conta Google. */
+export function getLastDriveSync(email: string): string | null {
+  return email ? localStorage.getItem(lastSyncKey(email)) : null;
 }
 
-export function setLastDriveSync(iso: string) {
-  localStorage.setItem(LAST_SYNC_KEY, iso);
+export function setLastDriveSync(email: string, iso: string) {
+  if (email) localStorage.setItem(lastSyncKey(email), iso);
 }
 
 export function formatBytes(n: number): string {
