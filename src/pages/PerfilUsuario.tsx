@@ -5,8 +5,13 @@ import { User, Briefcase, Bell, Shield, Download, Upload, Save, Camera } from "l
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, verifyPassword } from "@/lib/auth";
 import { ESTADOS_CIVIS, UFS_BRASIL } from "@/types";
+import { backupFileName, createBackup, parseBackup, serializeBackup, type LexcoBackup } from "@/lib/backup";
+import { RestaurarBackupDialog } from "@/components/RestaurarBackupDialog";
+import { csvLinha } from "@/lib/csv";
+import { formatarData, hojeISO } from "@/lib/dates";
+import { GoogleDriveBackup } from "@/components/GoogleDriveBackup";
 
 const tabs = [
   { id: "pessoal", label: "Dados Pessoais", icon: User },
@@ -17,22 +22,41 @@ const tabs = [
 ];
 
 const PerfilUsuario = () => {
-  const { currentUser, updateUser } = useAuth();
+  const { currentUser, updateUser, podeGerenciarUsuarios } = useAuth();
   const [activeTab, setActiveTab] = useState("pessoal");
   const [form, setForm] = useState<Record<string, string>>(() => {
     if (!currentUser) return {};
     return Object.fromEntries(Object.entries(currentUser).filter(([, v]) => typeof v === "string") as [string, string][]);
   });
   const fileRef = useRef<HTMLInputElement>(null);
+  const [backupParaRestaurar, setBackupParaRestaurar] = useState<LexcoBackup | null>(null);
+  const [backupOrigem, setBackupOrigem] = useState<string>();
+  const [senhaForm, setSenhaForm] = useState({ atual: "", nova: "", confirmar: "" });
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
     if (!currentUser) return;
-    const updates: any = { ...form };
+    const updates: Record<string, unknown> = { ...form };
     delete updates.senha;
     delete updates.id;
-    await updateUser(updates);
+    delete updates.contaGoogle;
+    delete updates.nomeExibicao; // fica em preferencias (é de lá que Topbar/Dashboard leem)
+
+    const nome = (form.nome || "").trim();
+    const email = (form.email || "").trim().toLowerCase();
+    if (!nome) { toast.error("Informe o nome"); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast.error("E-mail inválido"); return; }
+    const outro = await db.users.where("email").equals(email).first();
+    if (outro && outro.id !== currentUser.id) { toast.error("Este e-mail já é usado por outro usuário"); return; }
+
+    const nomeExibicao = (form.nomeExibicao ?? currentUser.preferencias?.nomeExibicao ?? "").trim();
+    await updateUser({
+      ...(updates as Partial<typeof currentUser>),
+      nome,
+      email,
+      preferencias: { ...currentUser.preferencias, nomeExibicao: nomeExibicao || undefined },
+    });
     toast.success("Perfil salvo!");
   };
 
@@ -56,81 +80,77 @@ const PerfilUsuario = () => {
       const processos = await db.processos.toArray();
       const myProcs = processos.filter((p) => p.criadoPor === userId || p.responsavelId === userId);
       csv += "=== PROCESSOS ===\n";
-      csv += "ID,Titulo,Numero,Area,Status,Prioridade,DataCadastro\n";
-      myProcs.forEach((p) => { csv += `"${p.id}","${p.titulo}","${p.numero || ""}","${p.areaDireito || ""}","${p.status}","${p.prioridade || ""}","${p.dataCadastro}"\n`; });
+      csv += csvLinha(["ID", "Titulo", "Numero", "Area", "Status", "Prioridade", "DataCadastro"]);
+      myProcs.forEach((p) => { csv += csvLinha([p.id, p.titulo, p.numero, p.areaDireito, p.status, p.prioridade, p.dataCadastro]); });
       csv += "\n";
     }
     if (tipo === "tudo" || tipo === "partes") {
       const partes = await db.partes.toArray();
       csv += "=== PARTES INTERESSADAS ===\n";
-      csv += "ID,Nome,Tipo,CPF_CNPJ,Email,Telefone,Cidade,Estado\n";
-      partes.forEach((p) => { csv += `"${p.id}","${p.nome || p.razaoSocial}","${p.tipoPessoa}","${p.cpfCnpj || ""}","${p.email || ""}","${p.telefone || ""}","${p.cidade || ""}","${p.estado || ""}"\n`; });
+      csv += csvLinha(["ID", "Nome", "Tipo", "CPF_CNPJ", "Email", "Telefone", "Cidade", "Estado"]);
+      partes.forEach((p) => { csv += csvLinha([p.id, p.nome || p.razaoSocial, p.tipoPessoa, p.cpfCnpj, p.email, p.telefone, p.cidade, p.estado]); });
       csv += "\n";
     }
     if (tipo === "tudo" || tipo === "eventos") {
       const eventos = await db.eventos.toArray();
       csv += "=== EVENTOS ===\n";
-      csv += "ID,Titulo,Tipo,Data,HoraInicio,Status\n";
-      eventos.forEach((e) => { csv += `"${e.id}","${e.titulo}","${e.tipo}","${e.data}","${e.horaInicio || ""}","${e.status}"\n`; });
+      csv += csvLinha(["ID", "Titulo", "Tipo", "Data", "HoraInicio", "Status"]);
+      eventos.forEach((e) => { csv += csvLinha([e.id, e.titulo, e.tipo, formatarData(e.data), e.horaInicio, e.status]); });
     }
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // BOM: faz o Excel reconhecer UTF-8 (acentos)
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `lexco_export_${tipo}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `lexco_export_${tipo}_${hojeISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Exportação concluída!");
   };
 
   const handleExportJSON = async () => {
-    const data = {
-      user: currentUser,
-      processos: await db.processos.toArray(),
-      partes: await db.partes.toArray(),
-      vinculos: await db.vinculos.toArray(),
-      eventos: await db.eventos.toArray(),
-      prazos: await db.prazos.toArray(),
-      arquivos: (await db.arquivos.toArray()).map((a) => ({ ...a, dados: undefined })),
-      historico: await db.historico.toArray(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `lexco_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Backup exportado!");
+    if (!podeGerenciarUsuarios) return;
+    try {
+      const backup = await createBackup();
+      const blob = new Blob([serializeBackup(backup)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = backupFileName();
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Backup exportado!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Falha ao gerar o backup.");
+    }
   };
 
-  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const data = JSON.parse(ev.target?.result as string);
-        if (data.processos) await db.processos.bulkPut(data.processos);
-        if (data.partes) await db.partes.bulkPut(data.partes);
-        if (data.vinculos) await db.vinculos.bulkPut(data.vinculos);
-        if (data.eventos) await db.eventos.bulkPut(data.eventos);
-        if (data.prazos) await db.prazos.bulkPut(data.prazos);
-        if (data.historico) await db.historico.bulkPut(data.historico);
-        toast.success("Dados importados com sucesso!");
-      } catch {
-        toast.error("Arquivo inválido");
-      }
-    };
-    reader.readAsText(file);
+  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = ""; // permite escolher o mesmo arquivo de novo
+    if (!file || !podeGerenciarUsuarios) return;
+    try {
+      setBackupOrigem(`arquivo ${file.name}`);
+      setBackupParaRestaurar(parseBackup(await file.text()));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Arquivo inválido");
+    }
   };
 
-  const handlePasswordChange = async () => {
-    const newPass = prompt("Digite a nova senha (mínimo 4 caracteres):");
-    if (!newPass || newPass.length < 4) { toast.error("Senha inválida"); return; }
-    const hashed = await hashPassword(newPass);
-    await updateUser({ senha: hashed } as any);
-    toast.success("Senha alterada!");
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (currentUser.senha && !(await verifyPassword(senhaForm.atual, currentUser.senha))) {
+      toast.error("Senha atual incorreta");
+      return;
+    }
+    if (senhaForm.nova.length < 4) { toast.error("A nova senha deve ter no mínimo 4 caracteres"); return; }
+    if (senhaForm.nova !== senhaForm.confirmar) { toast.error("As senhas não conferem"); return; }
+    await updateUser({ senha: await hashPassword(senhaForm.nova) });
+    setSenhaForm({ atual: "", nova: "", confirmar: "" });
+    toast.success(currentUser.senha ? "Senha alterada!" : "Senha local definida!");
   };
 
   if (!currentUser) return null;
@@ -246,7 +266,12 @@ const PerfilUsuario = () => {
             {activeTab === "preferencias" && (
               <div className="space-y-6">
                 <h2 className="text-lg font-heading font-semibold text-foreground">Preferências</h2>
-                <F label="Nome de Exibição" value={form.nomeExibicao || currentUser.preferencias?.nomeExibicao || ""} onChange={(v) => set("nomeExibicao", v)} />
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <F label="Nome de Exibição" value={form.nomeExibicao ?? currentUser.preferencias?.nomeExibicao ?? ""} onChange={(v) => set("nomeExibicao", v)} />
+                  </div>
+                  <Button onClick={handleSave}><Save className="h-4 w-4 mr-1" /> Salvar</Button>
+                </div>
                 <div className="space-y-4">
                   <p className="text-sm font-medium text-foreground">Notificações</p>
                   {[
@@ -280,14 +305,44 @@ const PerfilUsuario = () => {
                   <p className="text-sm font-medium text-foreground">Sessão Local Ativa</p>
                   <p className="text-xs text-muted-foreground">{currentUser.email}</p>
                   <p className="text-xs text-success">Conectado</p>
+                  {currentUser.contaGoogle && (
+                    <p className="text-xs text-muted-foreground">Vinculada à conta Google {currentUser.contaGoogle}</p>
+                  )}
                 </div>
-                <Button variant="outline" onClick={handlePasswordChange}>Alterar Senha</Button>
+                <form onSubmit={handlePasswordChange} className="space-y-3 max-w-sm">
+                  <h3 className="text-sm font-medium text-foreground">{currentUser.senha ? "Alterar senha" : "Definir senha local"}</h3>
+                  {!currentUser.senha && (
+                    <p className="text-xs text-muted-foreground">
+                      Você entra pelo Google. Defina uma senha se quiser entrar também sem a conta Google.
+                    </p>
+                  )}
+                  {currentUser.senha && (
+                    <input type="password" placeholder="Senha atual" value={senhaForm.atual} onChange={(e) => setSenhaForm((f) => ({ ...f, atual: e.target.value }))} className={inputCls} autoComplete="current-password" />
+                  )}
+                  <input type="password" placeholder="Nova senha (mín. 4 caracteres)" value={senhaForm.nova} onChange={(e) => setSenhaForm((f) => ({ ...f, nova: e.target.value }))} className={inputCls} autoComplete="new-password" />
+                  <input type="password" placeholder="Confirmar nova senha" value={senhaForm.confirmar} onChange={(e) => setSenhaForm((f) => ({ ...f, confirmar: e.target.value }))} className={inputCls} autoComplete="new-password" />
+                  <Button type="submit" variant="outline">{currentUser.senha ? "Alterar senha" : "Definir senha"}</Button>
+                </form>
               </div>
             )}
 
             {activeTab === "exportar" && (
               <div className="space-y-6">
                 <h2 className="text-lg font-heading font-semibold text-foreground">Importar / Exportar</h2>
+                {podeGerenciarUsuarios ? (
+                  <GoogleDriveBackup
+                    onRestore={(backup, origem) => {
+                      setBackupOrigem(origem);
+                      setBackupParaRestaurar(backup);
+                    }}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Backup completo e restauração (arquivo ou Google Drive) ficam disponíveis apenas para administradores,
+                    pois incluem os dados de todos os usuários.
+                  </p>
+                )}
+                <hr className="border-border" />
                 <div className="space-y-3">
                   <h3 className="text-sm font-medium text-foreground">Exportar CSV</h3>
                   <p className="text-xs text-muted-foreground">Fotos e arquivos anexados não são incluídos no CSV, apenas metadados textuais.</p>
@@ -298,9 +353,11 @@ const PerfilUsuario = () => {
                     <Button size="sm" variant="outline" onClick={() => handleExportCSV("eventos")}>Eventos</Button>
                   </div>
                 </div>
+                {podeGerenciarUsuarios && (<>
                 <hr className="border-border" />
                 <div className="space-y-3">
                   <h3 className="text-sm font-medium text-foreground">Backup JSON Completo</h3>
+                  <p className="text-xs text-muted-foreground">Inclui todos os dados, usuários e anexos. Use para guardar uma cópia ou levar o sistema para outro computador.</p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={handleExportJSON}><Download className="h-4 w-4 mr-1" /> Exportar JSON</Button>
                     <label className="inline-flex">
@@ -309,11 +366,17 @@ const PerfilUsuario = () => {
                     </label>
                   </div>
                 </div>
+                </>)}
               </div>
             )}
           </div>
         </div>
       </div>
+      <RestaurarBackupDialog
+        backup={backupParaRestaurar}
+        origem={backupOrigem}
+        onOpenChange={(open) => !open && setBackupParaRestaurar(null)}
+      />
     </AppLayout>
   );
 };

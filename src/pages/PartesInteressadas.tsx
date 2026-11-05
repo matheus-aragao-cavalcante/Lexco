@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Search, Eye, Edit, Trash2, Plus, UsersRound, Building2, User } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { db } from "@/lib/db";
+import { db, excluirParte, podeExcluirParte } from "@/lib/db";
 import { NovaParteDialog } from "@/components/NovaParteDialog";
 import type { ParteInteressada } from "@/types";
 import { toast } from "sonner";
@@ -30,10 +30,18 @@ const PartesInteressadas = () => {
   });
 
   const handleDelete = async (id: string) => {
+    const { ok, vinculos } = await podeExcluirParte(id);
+    if (!ok) {
+      toast.error(`Esta parte está vinculada a ${vinculos} processo${vinculos > 1 ? "s" : ""}. Remova os vínculos antes de excluir.`);
+      return;
+    }
     if (!confirm("Deseja realmente excluir esta parte?")) return;
-    await db.partes.delete(id);
-    await db.vinculos.where("parteId").equals(id).delete();
-    toast.success("Parte excluída");
+    try {
+      await excluirParte(id);
+      toast.success("Parte excluída");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao excluir a parte");
+    }
     loadPartes();
   };
 

@@ -22,7 +22,7 @@ const navItems = [
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-  const { currentUser, updateUser } = useAuth();
+  const { currentUser, updateUser, podeGerenciarUsuarios } = useAuth();
 
   const isDark = document.documentElement.classList.contains("dark");
 
@@ -63,7 +63,7 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {navItems.filter((item) => item.url !== "/usuarios" || podeGerenciarUsuarios).map((item) => {
           const isActive = location.pathname === item.url || (item.url !== "/" && location.pathname.startsWith(item.url));
           return (
             <NavLink

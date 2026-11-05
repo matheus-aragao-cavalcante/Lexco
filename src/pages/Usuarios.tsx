@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { NovoUsuarioDialog } from "@/components/NovoUsuarioDialog";
 import { db } from "@/lib/db";
+import { useAuth } from "@/contexts/AuthContext";
 import type { User } from "@/types";
 
 const perfilBadge: Record<string, string> = {
@@ -19,7 +20,9 @@ const Usuarios = () => {
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
-  const load = async () => { setUsers(await db.users.toArray()); };
+  const { refreshLocalUsers } = useAuth();
+  // Atualiza também a lista do contexto (permissões dependem de quem é admin).
+  const load = async () => { setUsers(await db.users.toArray()); await refreshLocalUsers(); };
   useEffect(() => { load(); }, []);
 
   const filtered = users.filter((u) =>

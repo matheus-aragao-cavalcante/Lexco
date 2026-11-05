@@ -6,6 +6,7 @@ import { Clock, AlertTriangle, CheckCircle2, CalendarDays, List, Timer, Plus, Pe
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { db, addHistorico } from "@/lib/db";
+import { formatarData, hojeISO, somarDiasISO, statusEfetivoPrazo } from "@/lib/dates";
 import { useAuth } from "@/contexts/AuthContext";
 import { PrazoDialog } from "@/components/PrazoDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -33,9 +34,9 @@ const Prazos = () => {
   };
   useEffect(() => { load(); }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const today = hojeISO();
+  const in7 = somarDiasISO(today, 7);
+  const tomorrow = somarDiasISO(today, 1);
 
   const kpis = useMemo(() => ({
     hoje: prazos.filter((p) => p.dataLimite === today && p.status !== "cumprido").length,
@@ -45,7 +46,8 @@ const Prazos = () => {
     cumpridos: prazos.filter((p) => p.status === "cumprido").length,
   }), [prazos, today, tomorrow, in7]);
 
-  const filtered = prazos.filter((p) => statusFilter === "todos" || p.status === statusFilter);
+  // Filtra pelo status efetivo: um prazo pendente com data passada aparece em "Atrasados".
+  const filtered = prazos.filter((p) => statusFilter === "todos" || statusEfetivoPrazo(p, today) === statusFilter);
 
   const handleEdit = (p: Prazo) => { setEditing(p); setDialogOpen(true); };
   const handleNew = () => { setEditing(null); setDialogOpen(true); };
@@ -76,11 +78,7 @@ const Prazos = () => {
     load();
   };
 
-  const formatDate = (d: string) => {
-    if (!d) return "—";
-    const [y, m, dd] = d.split("-");
-    return `${dd}/${m}/${y}`;
-  };
+  const formatDate = formatarData;
 
   return (
     <AppLayout>
@@ -163,7 +161,7 @@ const Prazos = () => {
                         </td>
                         <td className="py-3 px-4 text-foreground hidden lg:table-cell">{resp?.nome || "—"}</td>
                         <td className="py-3 px-4 text-foreground font-medium">{formatDate(p.dataLimite)}{p.hora ? ` ${p.hora}` : ""}</td>
-                        <td className="py-3 px-4"><StatusBadge status={p.status} /></td>
+                        <td className="py-3 px-4"><StatusBadge status={statusEfetivoPrazo(p, today)} /></td>
                         <td className="py-3 px-4">
                           <div className="flex justify-end gap-1">
                             {p.status !== "cumprido" && (
@@ -201,9 +199,9 @@ const Prazos = () => {
                   return (
                     <div key={p.id} className="relative pl-10">
                       <div className={`absolute left-2.5 top-1.5 h-3 w-3 rounded-full border-2 ${
-                        p.status === "urgente" ? "bg-primary border-primary" :
-                        p.status === "atrasado" ? "bg-destructive border-destructive" :
-                        p.status === "cumprido" ? "bg-success border-success" :
+                        statusEfetivoPrazo(p, today) === "urgente" ? "bg-primary border-primary" :
+                        statusEfetivoPrazo(p, today) === "atrasado" ? "bg-destructive border-destructive" :
+                        statusEfetivoPrazo(p, today) === "cumprido" ? "bg-success border-success" :
                         "bg-warning border-warning"
                       }`} />
                       <div className="p-3 rounded-lg hover:bg-muted/50 transition-colors group">
@@ -218,7 +216,7 @@ const Prazos = () => {
                             </p>
                           </div>
                           <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
-                            <StatusBadge status={p.status} />
+                            <StatusBadge status={statusEfetivoPrazo(p, today)} />
                             <p className="text-xs text-muted-foreground">{formatDate(p.dataLimite)}</p>
                           </div>
                         </div>

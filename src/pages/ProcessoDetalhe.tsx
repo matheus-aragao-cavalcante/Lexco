@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/AppLayout";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { hojeISO } from "@/lib/dates";
 import { db, addHistorico, deleteProcessoCascata, contarDependenciasProcesso } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -30,6 +31,13 @@ const ProcessoDetalhe = () => {
   const [tab, setTab] = useState("geral");
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const formDe = (obj: object) =>
+    Object.fromEntries(Object.entries(obj).filter(([, v]) => typeof v === "string") as [string, string][]);
+  /** Descarta as alterações não salvas e volta aos dados gravados. */
+  const cancelarEdicao = () => {
+    if (processo) setForm(formDe(processo));
+    setEditing(false);
+  };
 
   // dialogs
   const [prazoDialogOpen, setPrazoDialogOpen] = useState(false);
@@ -48,7 +56,7 @@ const ProcessoDetalhe = () => {
     const p = await db.processos.get(id);
     if (!p) { navigate("/processos"); return; }
     setProcesso(p);
-    setForm(Object.fromEntries(Object.entries(p).filter(([, v]) => typeof v === "string") as [string, string][]));
+    setForm(formDe(p));
 
     const vs = await db.vinculos.where("processoId").equals(id).toArray();
     const vWithParte = await Promise.all(vs.map(async (v) => ({ ...v, parte: await db.partes.get(v.parteId) })));
@@ -139,7 +147,7 @@ const ProcessoDetalhe = () => {
   if (!processo) return <AppLayout><div className="py-12 text-center text-muted-foreground">Carregando...</div></AppLayout>;
 
   // visão geral metrics
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hojeISO();
   const proximoPrazo = prazos.find((p) => p.status !== "cumprido");
   const prazosAbertos = prazos.filter((p) => p.status !== "cumprido").length;
   const prazosVencidos = prazos.filter((p) => p.dataLimite < today && p.status !== "cumprido").length;
@@ -266,7 +274,7 @@ const ProcessoDetalhe = () => {
               <h2 className="font-heading font-semibold text-foreground">Dados do Processo</h2>
               {editing ? (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditing(false)}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
+                  <Button size="sm" variant="outline" onClick={cancelarEdicao}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
                   <Button size="sm" onClick={handleSave}><Save className="h-4 w-4 mr-1" /> Salvar</Button>
                 </div>
               ) : (

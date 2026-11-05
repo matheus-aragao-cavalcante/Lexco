@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { EventoDialog } from "@/components/EventoDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { Evento, Processo } from "@/types";
+import { formatarData, hojeISO, toISODateLocal } from "@/lib/dates";
 import { toast } from "sonner";
 
 const diasSemana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -29,7 +30,8 @@ const tipoColors: Record<string, string> = {
 const Agenda = () => {
   const { currentUser } = useAuth();
   const [view, setView] = useState<"mes" | "semana" | "dia">("mes");
-  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+  // Data selecionada: base para as visões de mês, semana e dia.
+  const [cursor, setCursor] = useState(() => new Date());
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [processos, setProcessos] = useState<Record<string, Processo>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -49,9 +51,18 @@ const Agenda = () => {
   const today = new Date();
   const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
   const todayDay = today.getDate();
-  const todayISO = today.toISOString().slice(0, 10);
+  const todayISO = hojeISO();
+  const cursorISO = toISODateLocal(cursor);
 
   const monthName = cursor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  // Semana (domingo a sábado) que contém a data selecionada — pode atravessar meses.
+  const diasDaSemana = Array.from({ length: 7 }, (_, i) => new Date(year, month, cursor.getDate() - cursor.getDay() + i));
+  const tituloPeriodo =
+    view === "mes"
+      ? monthName
+      : view === "semana"
+        ? `${formatarData(toISODateLocal(diasDaSemana[0]))} – ${formatarData(toISODateLocal(diasDaSemana[6]))}`
+        : cursor.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const diasNoMes = new Date(year, month + 1, 0).getDate();
   const primeiroDia = new Date(year, month, 1).getDay();
   const dias = Array.from({ length: diasNoMes }, (_, i) => i + 1);
@@ -89,14 +100,18 @@ const Agenda = () => {
     load();
   };
 
-  const goPrev = () => setCursor(new Date(year, month - 1, 1));
-  const goNext = () => setCursor(new Date(year, month + 1, 1));
-  const goToday = () => { const d = new Date(); d.setDate(1); setCursor(d); };
+  const passo = (dir: 1 | -1) => {
+    if (view === "mes") setCursor(new Date(year, month + dir, 1));
+    else setCursor(new Date(year, month, cursor.getDate() + dir * (view === "semana" ? 7 : 1)));
+  };
+  const goPrev = () => passo(-1);
+  const goNext = () => passo(1);
+  const goToday = () => setCursor(new Date());
 
+  const porHora = (a: Evento, b: Evento) => (a.horaInicio || "").localeCompare(b.horaInicio || "");
   const eventosDoDiaSelecionado = (dia: number) => eventosPorDia[dia] || [];
-  const eventosOrdenadosDoMes = eventos
-    .filter((e) => { const [y, m] = e.data.split("-").map(Number); return y === year && m - 1 === month; })
-    .sort((a, b) => `${a.data}${a.horaInicio || ""}`.localeCompare(`${b.data}${b.horaInicio || ""}`));
+  const eventosNaData = (iso: string) => eventos.filter((e) => e.data === iso).sort(porHora);
+  const eventosDoDia = eventosNaData(cursorISO);
 
   return (
     <AppLayout>
@@ -104,7 +119,7 @@ const Agenda = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-heading font-semibold text-foreground">Agenda</h1>
-            <p className="text-muted-foreground text-sm mt-1 capitalize">{monthName}</p>
+            <p className="text-muted-foreground text-sm mt-1 first-letter:uppercase">{tituloPeriodo}</p>
           </div>
           <div className="flex gap-3">
             <div className="flex gap-1 bg-muted rounded-lg p-1">
@@ -115,7 +130,7 @@ const Agenda = () => {
                 </button>
               ))}
             </div>
-            <Button className="gap-2" onClick={() => { setEditing(null); setInitialDate(todayISO); setDialogOpen(true); }}>
+            <Button className="gap-2" onClick={() => { setEditing(null); setInitialDate(view === "mes" ? todayISO : cursorISO); setDialogOpen(true); }}>
               <Plus className="h-4 w-4" /> Novo Evento
             </Button>
           </div>
@@ -123,7 +138,7 @@ const Agenda = () => {
 
         <div className="flex items-center justify-between bg-card rounded-lg border shadow-card p-3">
           <Button variant="ghost" size="icon" onClick={goPrev}><ChevronLeft className="h-5 w-5" /></Button>
-          <h2 className="font-heading font-semibold text-lg text-foreground capitalize">{monthName}</h2>
+          <h2 className="font-heading font-semibold text-lg text-foreground first-letter:uppercase">{tituloPeriodo}</h2>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={goToday}>Hoje</Button>
             <Button variant="ghost" size="icon" onClick={goNext}><ChevronRight className="h-5 w-5" /></Button>
@@ -172,19 +187,21 @@ const Agenda = () => {
         {view === "semana" && (
           <div className="bg-card rounded-lg border shadow-card p-5">
             <div className="grid grid-cols-7 gap-3">
-              {Array.from({ length: 7 }, (_, i) => {
-                const baseDay = isCurrentMonth ? Math.max(1, todayDay - 3) : 1;
-                const dia = baseDay + i;
-                if (dia > diasNoMes) return null;
-                const evs = eventosDoDiaSelecionado(dia);
-                const isHoje = isCurrentMonth && dia === todayDay;
-                const dt = new Date(year, month, dia);
+              {diasDaSemana.map((dt) => {
+                const iso = toISODateLocal(dt);
+                const evs = eventosNaData(iso);
+                const isHoje = iso === todayISO;
                 return (
-                  <div key={dia} className={`rounded-lg p-3 min-h-[200px] ${isHoje ? "bg-primary/5 border border-primary/20" : "bg-muted/30"}`}>
-                    <div className="text-center mb-3">
+                  <div key={iso} className={`rounded-lg p-3 min-h-[200px] ${isHoje ? "bg-primary/5 border border-primary/20" : "bg-muted/30"}`}>
+                    <button
+                      type="button"
+                      onClick={() => { setCursor(dt); setView("dia"); }}
+                      className="w-full text-center mb-3 rounded hover:bg-muted/60 transition-colors"
+                      title="Ver o dia"
+                    >
                       <p className="text-xs text-muted-foreground">{diasSemana[dt.getDay()]}</p>
-                      <p className={`text-lg font-semibold ${isHoje ? "text-primary" : "text-foreground"}`}>{dia}</p>
-                    </div>
+                      <p className={`text-lg font-semibold ${isHoje ? "text-primary" : "text-foreground"}`}>{dt.getDate()}</p>
+                    </button>
                     <div className="space-y-2">
                       {evs.map((e) => (
                         <button key={e.id} onClick={() => handleEdit(e)}
@@ -203,18 +220,18 @@ const Agenda = () => {
 
         {view === "dia" && (
           <div className="bg-card rounded-lg border shadow-card p-5">
-            <h3 className="font-heading font-semibold text-foreground mb-4">
-              {isCurrentMonth ? `${todayDay} de ${monthName} — Hoje` : `Eventos do mês`}
+            <h3 className="font-heading font-semibold text-foreground mb-4 first-letter:uppercase">
+              {tituloPeriodo}{cursorISO === todayISO ? " — Hoje" : ""}
             </h3>
             <div className="space-y-2">
-              {eventosOrdenadosDoMes.map((e) => {
+              {eventosDoDia.map((e) => {
                 const proc = e.processoId ? processos[e.processoId] : null;
                 return (
                   <div key={e.id} className={`flex items-start justify-between gap-3 p-3 rounded-lg ${tipoColors[e.tipo] || tipoColors.outro}`}>
                     <div className="flex-1 min-w-0">
                       <button onClick={() => handleEdit(e)} className="font-medium text-left hover:underline">{e.titulo}</button>
                       <p className="text-xs opacity-80 mt-0.5">
-                        {e.data.split("-").reverse().join("/")} {e.horaInicio && `· ${e.horaInicio}`}
+                        {e.horaInicio ? e.horaInicio : "Dia todo"}
                         {proc && <> · <Link to={`/processos/${proc.id}`} className="underline hover:opacity-100">{proc.numero || proc.titulo}</Link></>}
                       </p>
                     </div>
@@ -225,8 +242,8 @@ const Agenda = () => {
                   </div>
                 );
               })}
-              {eventosOrdenadosDoMes.length === 0 && (
-                <p className="text-center text-muted-foreground text-sm py-8">Nenhum evento neste mês.</p>
+              {eventosDoDia.length === 0 && (
+                <p className="text-center text-muted-foreground text-sm py-8">Nenhum evento neste dia.</p>
               )}
             </div>
           </div>

@@ -5,13 +5,8 @@ import type {
 } from "@/types";
 
 /**
- * Camada local-first via IndexedDB (Dexie).
- *
- * Quando migrar para Firestore, mantenha a mesma forma das funções
- * (addHistorico, deleteProcessoCascata, etc.) — elas serão a interface
- * usada pelas páginas, e a implementação interna é que muda.
- *
- * Veja src/services/db/firestoreRepositories.ts para o ponto de troca.
+ * Banco local (IndexedDB via Dexie). Todos os dados do Lexco ficam aqui, no
+ * computador do usuário. Backup/restauração: src/lib/backup.ts (arquivo ou Google Drive).
  */
 class LexcoDB extends Dexie {
   users!: Table<User>;
@@ -63,30 +58,61 @@ export async function addHistorico(
 
 /** Conta dependências de um processo (para mensagens de confirmação). */
 export async function contarDependenciasProcesso(processoId: string) {
-  const [prazos, eventos, arquivos, vinculos, historico] = await Promise.all([
-    db.prazos.where("processoId").equals(processoId).count(),
-    db.eventos.where("processoId").equals(processoId).count(),
-    db.arquivos.where("entidadeId").equals(processoId).count(),
+  // Mesmo conjunto que deleteProcessoCascata apaga (inclui o que pertence a prazos/eventos filhos).
+  const prazoIds = await db.prazos.where("processoId").equals(processoId).primaryKeys();
+  const eventoIds = await db.eventos.where("processoId").equals(processoId).primaryKeys();
+  const entidades = [processoId, ...prazoIds, ...eventoIds] as string[];
+  const [arquivos, vinculos, historico] = await Promise.all([
+    db.arquivos.where("entidadeId").anyOf(entidades).count(),
     db.vinculos.where("processoId").equals(processoId).count(),
-    db.historico.where("entidadeId").equals(processoId).count(),
+    db.historico.where("entidadeId").anyOf(entidades).count(),
   ]);
-  return { prazos, eventos, arquivos, vinculos, historico };
+  return { prazos: prazoIds.length, eventos: eventoIds.length, arquivos, vinculos, historico };
 }
 
-/** Exclusão em cascata: processo + prazos + eventos + arquivos + vínculos + histórico. */
+/**
+ * Exclusão em cascata, numa única transação (ou apaga tudo, ou nada):
+ * processo + prazos + eventos + vínculos, e o histórico/anexos do processo
+ * E dos prazos/eventos filhos.
+ */
 export async function deleteProcessoCascata(processoId: string) {
-  await Promise.all([
-    db.prazos.where("processoId").equals(processoId).delete(),
-    db.eventos.where("processoId").equals(processoId).delete(),
-    db.arquivos.where("entidadeId").equals(processoId).delete(),
-    db.vinculos.where("processoId").equals(processoId).delete(),
-    db.historico.where("entidadeId").equals(processoId).delete(),
-  ]);
-  await db.processos.delete(processoId);
+  await db.transaction("rw", [db.processos, db.prazos, db.eventos, db.arquivos, db.vinculos, db.historico], async () => {
+    const prazoIds = await db.prazos.where("processoId").equals(processoId).primaryKeys();
+    const eventoIds = await db.eventos.where("processoId").equals(processoId).primaryKeys();
+    const entidades = [processoId, ...prazoIds, ...eventoIds] as string[];
+
+    await db.arquivos.where("entidadeId").anyOf(entidades).delete();
+    await db.historico.where("entidadeId").anyOf(entidades).delete();
+    await db.prazos.bulkDelete(prazoIds);
+    await db.eventos.bulkDelete(eventoIds);
+    await db.vinculos.where("processoId").equals(processoId).delete();
+    await db.processos.delete(processoId);
+  });
 }
 
 /** Verifica se uma parte tem vínculos antes de excluir. */
 export async function podeExcluirParte(parteId: string) {
   const vinculos = await db.vinculos.where("parteId").equals(parteId).count();
   return { ok: vinculos === 0, vinculos };
+}
+
+/**
+ * Exclui uma parte SEM vínculos com processos (quem chama deve checar
+ * podeExcluirParte antes), junto com anexos/histórico dela e as
+ * referências em eventos.partesIds.
+ */
+export async function excluirParte(parteId: string) {
+  await db.transaction("rw", [db.partes, db.vinculos, db.arquivos, db.historico, db.eventos], async () => {
+    if ((await db.vinculos.where("parteId").equals(parteId).count()) > 0) {
+      throw new Error("A parte ainda está vinculada a processos.");
+    }
+    await db.arquivos.where("entidadeId").equals(parteId).delete();
+    await db.historico.where("entidadeId").equals(parteId).delete();
+    await db.eventos
+      .filter((e) => Array.isArray(e.partesIds) && e.partesIds.includes(parteId))
+      .modify((e) => {
+        e.partesIds = e.partesIds.filter((id) => id !== parteId);
+      });
+    await db.partes.delete(parteId);
+  });
 }

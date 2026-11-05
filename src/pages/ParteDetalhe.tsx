@@ -21,6 +21,13 @@ const ParteDetalhe = () => {
   const [tab, setTab] = useState("geral");
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const formDe = (obj: object) =>
+    Object.fromEntries(Object.entries(obj).filter(([, v]) => typeof v === "string") as [string, string][]);
+  /** Descarta as alterações não salvas e volta aos dados gravados. */
+  const cancelarEdicao = () => {
+    if (parte) setForm(formDe(parte));
+    setEditing(false);
+  };
 
   useEffect(() => { load(); }, [id]);
 
@@ -29,7 +36,7 @@ const ParteDetalhe = () => {
     const p = await db.partes.get(id);
     if (!p) { navigate("/partes"); return; }
     setParte(p);
-    setForm(Object.fromEntries(Object.entries(p).filter(([, v]) => typeof v === "string") as [string, string][]));
+    setForm(formDe(p));
     // Load vinculos with processes
     const vs = await db.vinculos.where("parteId").equals(id).toArray();
     const vWithProc = await Promise.all(vs.map(async (v) => {
@@ -105,7 +112,7 @@ const ParteDetalhe = () => {
               <h2 className="font-heading font-semibold text-foreground">Informações</h2>
               {editing ? (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditing(false)}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
+                  <Button size="sm" variant="outline" onClick={cancelarEdicao}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
                   <Button size="sm" onClick={handleSave}><Save className="h-4 w-4 mr-1" /> Salvar</Button>
                 </div>
               ) : (

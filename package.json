@@ -1,18 +1,54 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "lexco",
+  "productName": "Lexco",
+  "description": "Lexco — Gestão Jurídica",
+  "author": "Lexco",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "br.com.lexco.desktop",
+    "productName": "Lexco",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/favicon.ico",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lexco",
+      "deleteAppDataOnUninstall": false
+    }
+  },
   "scripts": {
     "dev": "vite",
+    "electron:dev": "npm run google:config && concurrently -k -n vite,electron \"vite --port 8080 --strictPort\" \"wait-on tcp:127.0.0.1:8080 && cross-env ELECTRON_DEV_URL=http://localhost:8080 electron .\"",
+    "electron:build": "npm run google:config && vite build && electron-builder --win",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "google:config": "node scripts/gen-google-config.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -76,9 +112,14 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "fake-indexeddb": "^6.2.7",
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
     "lovable-tagger": "^1.1.13",
@@ -87,6 +128,13 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wait-on": "^9.5.1"
+  },
+  "allowScripts": {
+    "electron@45.2.2": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.25.0": true,
+    "@swc/core@1.13.2": true
   }
 }

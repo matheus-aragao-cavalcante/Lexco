@@ -3,6 +3,7 @@ import { KPICard } from "@/components/KPICard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/db";
+import { formatarData, hojeISO, somarDiasISO, statusEfetivoPrazo } from "@/lib/dates";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -27,8 +28,16 @@ const Dashboard = () => {
   const ativos = processos.filter((p) => p.status === "ativo").length;
   const pendentes = processos.filter((p) => p.status === "pendente").length;
   const concluidos = processos.filter((p) => p.status === "concluido").length;
-  const today = new Date().toISOString().slice(0, 10);
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const today = hojeISO();
+  const tomorrow = somarDiasISO(today, 1);
+  // Mais urgentes primeiro (data e hora); recentes = últimos cadastrados.
+  const prazosProximos = prazos
+    .filter((p) => p.status !== "cumprido")
+    .sort((a, b) => `${a.dataLimite} ${a.hora || ""}`.localeCompare(`${b.dataLimite} ${b.hora || ""}`))
+    .slice(0, 5);
+  const processosRecentes = [...processos]
+    .sort((a, b) => (b.dataCadastro || "").localeCompare(a.dataCadastro || ""))
+    .slice(0, 5);
   const prazosHoje = prazos.filter((p) => p.dataLimite === today && p.status !== "cumprido").length;
   const prazosAmanha = prazos.filter((p) => p.dataLimite === tomorrow && p.status !== "cumprido").length;
 
@@ -92,14 +101,14 @@ const Dashboard = () => {
               <Link to="/prazos" className="text-sm text-primary hover:underline">Ver todos</Link>
             </div>
             <div className="space-y-3">
-              {prazos.filter((p) => p.status !== "cumprido").slice(0, 5).map((prazo) => (
+              {prazosProximos.map((prazo) => (
                 <div key={prazo.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
                   <div className={`h-2 w-2 rounded-full mt-2 flex-shrink-0 ${prazo.dataLimite <= today ? "bg-destructive" : "bg-warning"}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{prazo.titulo}</p>
-                    <p className="text-xs text-muted-foreground">{prazo.dataLimite}</p>
+                    <p className="text-xs text-muted-foreground">{formatarData(prazo.dataLimite)}{prazo.hora ? ` · ${prazo.hora}` : ""}</p>
                   </div>
-                  <StatusBadge status={prazo.status} />
+                  <StatusBadge status={statusEfetivoPrazo(prazo, today)} />
                 </div>
               ))}
               {prazos.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum prazo cadastrado</p>}
@@ -125,7 +134,7 @@ const Dashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {processos.slice(-5).reverse().map((p) => (
+                  {processosRecentes.map((p) => (
                     <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="py-3 px-2">
                         <Link to={`/processos/${p.id}`} className="font-medium text-foreground hover:text-primary hover:underline">{p.titulo}</Link>

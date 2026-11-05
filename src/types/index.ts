@@ -70,7 +70,9 @@ export interface User {
   nome: string;
   nomeSocial?: string;
   email: string;
-  senha: string; // SHA-256 hash
+  senha: string; // SHA-256 hash ("" quando a conta entra só pelo Google)
+  /** E-mail da conta Google vinculada (login com Google). */
+  contaGoogle?: string;
   cpf?: string;
   rg?: string;
   dataNascimento?: string;
