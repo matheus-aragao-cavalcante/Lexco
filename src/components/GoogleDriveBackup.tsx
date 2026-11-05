@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { CloudUpload, CloudDownload, LogOut, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { backupFileName, createBackup, parseBackup, serializeBackup, type LexcoBackup } from "@/lib/backup";
-import {
-  formatBytes, getDesktopGoogle, getLastDriveSync, googleDrive, setLastDriveSync,
-} from "@/lib/googleDrive";
+import { parseBackup, type LexcoBackup } from "@/lib/backup";
+import { formatBytes, getDesktopGoogle, googleDrive } from "@/lib/googleDrive";
+import { useDriveBackup } from "@/contexts/DriveBackupContext";
 
 interface Props {
   /** Entrega o backup baixado para a tela abrir o diálogo de restauração. */
@@ -17,30 +17,17 @@ interface Props {
 }
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+const automatico = (f: LexcoDriveFile) => f.name.startsWith("lexco_auto_");
 
-/** Bloco "Google Drive": conectar conta, sincronizar (enviar backup) e restaurar. */
+/** Bloco "Google Drive" do Perfil: conexão, backup automático, envio manual e restauração. */
 export function GoogleDriveBackup({ onRestore }: Props) {
-  const desktop = Boolean(getDesktopGoogle());
-  const [status, setStatus] = useState<LexcoGoogleStatus | null>(null);
-  const [busy, setBusy] = useState<"connect" | "sync" | "list" | "disconnect" | null>(null);
-  const [lastSync, setLastSync] = useState(getLastDriveSync());
+  const b = useDriveBackup();
   const [files, setFiles] = useState<LexcoDriveFile[] | null>(null);
+  const [listando, setListando] = useState(false);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<LexcoDriveFile | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await googleDrive.status());
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (desktop) refresh();
-  }, [desktop, refresh]);
-
-  if (!desktop) {
+  if (!getDesktopGoogle()) {
     return (
       <Section>
         <p className="text-xs text-muted-foreground">
@@ -49,14 +36,7 @@ export function GoogleDriveBackup({ onRestore }: Props) {
       </Section>
     );
   }
-  if (!status) {
-    return (
-      <Section>
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-      </Section>
-    );
-  }
-  if (!status.configured) {
+  if (!b.configurado) {
     return (
       <Section>
         <p className="text-xs text-muted-foreground">Integração com o Google não configurada nesta versão.</p>
@@ -64,44 +44,15 @@ export function GoogleDriveBackup({ onRestore }: Props) {
     );
   }
 
-  const connect = async () => {
-    setBusy("connect");
-    try {
-      const s = await googleDrive.connect();
-      setStatus(s);
-      toast.success(`Conectado como ${s.email || "conta Google"}`);
-    } catch (e) {
-      toast.error(errMsg(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const sync = async () => {
-    setBusy("sync");
-    try {
-      const backup = await createBackup();
-      const file = await googleDrive.upload(backupFileName(new Date(backup.createdAt)), serializeBackup(backup));
-      setLastDriveSync(backup.createdAt);
-      setLastSync(backup.createdAt);
-      toast.success(`Backup enviado ao Google Drive (${formatBytes(file.size)})`);
-    } catch (e) {
-      toast.error(errMsg(e));
-      refresh(); // pode ter sido desconectado (token revogado)
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const openList = async () => {
-    setBusy("list");
+    setListando(true);
     try {
       setFiles(await googleDrive.list());
     } catch (e) {
       toast.error(errMsg(e));
-      refresh();
+      b.atualizarStatus();
     } finally {
-      setBusy(null);
+      setListando(false);
     }
   };
 
@@ -131,34 +82,20 @@ export function GoogleDriveBackup({ onRestore }: Props) {
     }
   };
 
-  const disconnect = async () => {
-    setBusy("disconnect");
-    try {
-      setStatus(await googleDrive.disconnect());
-      toast.success("Conta Google desconectada");
-    } catch (e) {
-      toast.error(errMsg(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  if (!status.connected) {
+  if (!b.conectado) {
     return (
       <Section>
         <p className="text-xs text-muted-foreground">
           Conecte sua conta Google para guardar backups no <strong>seu</strong> Google Drive, na pasta
           "Lexco Backups". O Lexco só acessa os arquivos que ele mesmo cria.
         </p>
-        {busy === "connect" ? (
+        {b.conectando ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Aguardando autorização no navegador...
-            <Button size="sm" variant="ghost" onClick={() => googleDrive.cancelConnect().catch(() => {})}>
-              Cancelar
-            </Button>
+            <Button size="sm" variant="ghost" onClick={b.cancelarConexao}>Cancelar</Button>
           </div>
         ) : (
-          <Button size="sm" onClick={connect}>Conectar conta Google</Button>
+          <Button size="sm" onClick={b.conectar}>Conectar conta Google</Button>
         )}
       </Section>
     );
@@ -167,21 +104,33 @@ export function GoogleDriveBackup({ onRestore }: Props) {
   return (
     <Section>
       <p className="text-sm text-foreground">
-        Conectado como <strong>{status.email || "conta Google"}</strong>
+        Conectado como <strong>{b.email || "conta Google"}</strong>
       </p>
+
+      <label className="flex items-center justify-between gap-3 max-w-md rounded-lg border border-border p-3 cursor-pointer">
+        <span>
+          <span className="block text-sm font-medium text-foreground">Backup automático</span>
+          <span className="block text-xs text-muted-foreground">
+            Envia sozinho após as alterações (um arquivo por dia, guarda os últimos 30 dias).
+          </span>
+        </span>
+        <Switch checked={b.autoLigado} onCheckedChange={b.setAutoLigado} />
+      </label>
+
       <p className="text-xs text-muted-foreground">
-        {lastSync ? `Último backup enviado deste computador: ${fmtDate(lastSync)}` : "Nenhum backup enviado deste computador ainda."}
+        {b.ultimoBackup ? `Último backup enviado deste computador: ${fmtDate(b.ultimoBackup)}` : "Nenhum backup enviado deste computador ainda."}
+        {b.estado === "erro" && b.erro ? <span className="block text-destructive">Falha no último envio: {b.erro}</span> : null}
       </p>
       <div className="flex gap-2 flex-wrap">
-        <Button size="sm" onClick={sync} disabled={!!busy}>
-          {busy === "sync" ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CloudUpload className="h-4 w-4 mr-1" />}
-          Sincronizar agora
+        <Button size="sm" onClick={b.backupAgora} disabled={b.estado === "enviando"}>
+          {b.estado === "enviando" ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CloudUpload className="h-4 w-4 mr-1" />}
+          Fazer backup agora
         </Button>
-        <Button size="sm" variant="outline" onClick={openList} disabled={!!busy}>
-          {busy === "list" ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CloudDownload className="h-4 w-4 mr-1" />}
+        <Button size="sm" variant="outline" onClick={openList} disabled={listando}>
+          {listando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CloudDownload className="h-4 w-4 mr-1" />}
           Restaurar do Drive
         </Button>
-        <Button size="sm" variant="ghost" onClick={disconnect} disabled={!!busy}>
+        <Button size="sm" variant="ghost" onClick={b.desconectar}>
           <LogOut className="h-4 w-4 mr-1" /> Desconectar
         </Button>
       </div>
@@ -197,7 +146,12 @@ export function GoogleDriveBackup({ onRestore }: Props) {
             {files?.map((f) => (
               <li key={f.id} className="flex items-center justify-between gap-2 py-2">
                 <div className="min-w-0">
-                  <p className="text-sm text-foreground">{fmtDate(f.createdTime)}</p>
+                  <p className="text-sm text-foreground">
+                    {fmtDate(f.createdTime)}
+                    <span className="ml-2 text-[10px] uppercase rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                      {automatico(f) ? "automático" : "manual"}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted-foreground truncate">{f.name} · {formatBytes(f.size)}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">

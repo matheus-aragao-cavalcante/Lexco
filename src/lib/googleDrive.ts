@@ -28,7 +28,7 @@ export const googleDrive = {
   cancelConnect: () => unwrap(api().cancelConnect()),
   disconnect: () => unwrap(api().disconnect()),
   signOut: () => unwrap(api().signOut()),
-  upload: (name: string, content: string) => unwrap(api().upload(name, content)),
+  upload: (name: string, content: string, auto = false) => unwrap(api().upload(name, content, auto)),
   list: () => unwrap(api().list()),
   download: (id: string) => unwrap(api().download(id)),
   remove: (id: string) => unwrap(api().delete(id)),

@@ -33,7 +33,7 @@ interface LexcoDesktopAPI {
     cancelConnect(): Promise<LexcoIpcResult<void>>;
     disconnect(): Promise<LexcoIpcResult<LexcoGoogleStatus>>;
     signOut(): Promise<LexcoIpcResult<LexcoGoogleStatus>>;
-    upload(name: string, content: string): Promise<LexcoIpcResult<LexcoDriveFile>>;
+    upload(name: string, content: string, auto?: boolean): Promise<LexcoIpcResult<LexcoDriveFile>>;
     list(): Promise<LexcoIpcResult<LexcoDriveFile[]>>;
     download(id: string): Promise<LexcoIpcResult<string>>;
     delete(id: string): Promise<LexcoIpcResult<void>>;

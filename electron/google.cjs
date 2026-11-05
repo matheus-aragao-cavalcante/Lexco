@@ -351,26 +351,70 @@ async function ensureFolder() {
 const FILE_FIELDS = "id,name,size,createdTime";
 
 /** Envia um backup (upload "resumable": funciona para arquivos grandes, com anexos). */
-async function uploadBackup(name, content) {
+const MANTER_AUTOMATICOS = 30; // backups automáticos: 1 arquivo por dia, últimos 30 dias
+
+/**
+ * Envia um backup (upload "resumable": funciona para arquivos grandes, com anexos).
+ * - manual: sempre cria um arquivo novo (nunca é apagado automaticamente);
+ * - automático (`auto`): atualiza o arquivo do dia com o mesmo nome, se existir,
+ *   e apaga os automáticos mais antigos que os últimos MANTER_AUTOMATICOS.
+ */
+async function uploadBackup(name, content, auto = false) {
   if (typeof name !== "string" || !/^[\w.\- ]{1,120}$/.test(name)) throw new Error("Nome de arquivo inválido.");
   if (typeof content !== "string") throw new Error("Conteúdo inválido.");
+  if (typeof auto !== "boolean") throw new Error("Parâmetro inválido.");
   const folderId = await ensureFolder();
   const body = Buffer.from(content, "utf8");
 
-  const init = await gfetch(`${DRIVE_UPLOAD}/files?uploadType=resumable&fields=${FILE_FIELDS}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-      "X-Upload-Content-Type": "application/json",
-      "X-Upload-Content-Length": String(body.length),
-    },
-    body: JSON.stringify({ name, parents: [folderId], mimeType: "application/json", appProperties: { lexco: "backup" } }),
-  });
+  let existenteId = null;
+  if (auto) {
+    const query = `'${folderId}' in parents and name = '${name}' and trashed = false`;
+    const found = await (await gfetch(`${DRIVE_API}/files?q=${q(query)}&fields=files(id)&pageSize=1`)).json();
+    existenteId = found.files?.[0]?.id || null;
+  }
+
+  const init = existenteId
+    ? await gfetch(`${DRIVE_UPLOAD}/files/${existenteId}?uploadType=resumable&fields=${FILE_FIELDS}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": "application/json",
+          "X-Upload-Content-Length": String(body.length),
+        },
+        body: JSON.stringify({}),
+      })
+    : await gfetch(`${DRIVE_UPLOAD}/files?uploadType=resumable&fields=${FILE_FIELDS}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": "application/json",
+          "X-Upload-Content-Length": String(body.length),
+        },
+        body: JSON.stringify({
+          name,
+          parents: [folderId],
+          mimeType: "application/json",
+          appProperties: { lexco: "backup", tipo: auto ? "auto" : "manual" },
+        }),
+      });
   const location = init.headers.get("location");
   if (!location) throw new Error("O Google Drive não iniciou o envio.");
 
   const res = await gfetch(location, { method: "PUT", headers: { "Content-Type": "application/json" }, body });
-  return res.json();
+  const file = await res.json();
+  if (auto) await podarAutomaticos(folderId).catch(() => {}); // melhor esforço
+  return file;
+}
+
+/** Apaga backups automáticos além dos mais recentes (os manuais nunca são tocados). */
+async function podarAutomaticos(folderId) {
+  const query = `'${folderId}' in parents and trashed = false and appProperties has { key='tipo' and value='auto' }`;
+  const page = await (
+    await gfetch(`${DRIVE_API}/files?q=${q(query)}&orderBy=${q("createdTime desc")}&pageSize=200&fields=${q("files(id)")}`)
+  ).json();
+  for (const f of (page.files || []).slice(MANTER_AUTOMATICOS)) {
+    await gfetch(`${DRIVE_API}/files/${f.id}`, { method: "DELETE" });
+  }
 }
 
 async function listBackups() {

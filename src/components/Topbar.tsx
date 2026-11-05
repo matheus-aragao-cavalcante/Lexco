@@ -2,6 +2,7 @@ import { Search, ChevronDown, User, LogOut, UserCircle, ArrowLeftRight } from "l
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
+import { BackupStatusButton } from "@/components/BackupStatusButton";
 import { SearchDialog } from "@/components/SearchDialog";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -31,6 +32,7 @@ export function Topbar() {
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 
       <div className="flex items-center gap-3">
+        <BackupStatusButton />
         <NotificationsPanel />
 
         <div className="relative">

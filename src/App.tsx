@@ -17,6 +17,7 @@ import ParteDetalhe from "./pages/ParteDetalhe";
 import PerfilUsuario from "./pages/PerfilUsuario";
 import NotFound from "./pages/NotFound";
 import { SplashScreen } from "@/components/SplashScreen";
+import { DriveBackupProvider } from "@/contexts/DriveBackupContext";
 
 const queryClient = new QueryClient();
 
@@ -59,7 +60,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <DriveBackupProvider>
+            <AppRoutes />
+          </DriveBackupProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

@@ -2,7 +2,8 @@ import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { User, Briefcase, Bell, Shield, Download, Upload, Save, Camera } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth";
@@ -23,7 +24,13 @@ const tabs = [
 
 const PerfilUsuario = () => {
   const { currentUser, updateUser, podeGerenciarUsuarios } = useAuth();
-  const [activeTab, setActiveTab] = useState("pessoal");
+  // ?aba=exportar abre direto na aba (link "Gerenciar" do botão de backup no topo)
+  const { search } = useLocation();
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(search).get("aba") || "pessoal");
+  useEffect(() => {
+    const aba = new URLSearchParams(search).get("aba");
+    if (aba) setActiveTab(aba);
+  }, [search]);
   const [form, setForm] = useState<Record<string, string>>(() => {
     if (!currentUser) return {};
     return Object.fromEntries(Object.entries(currentUser).filter(([, v]) => typeof v === "string") as [string, string][]);
