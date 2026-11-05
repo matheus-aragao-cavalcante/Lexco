@@ -42,7 +42,7 @@ const Dashboard = () => {
   const prazosAmanha = prazos.filter((p) => p.dataLimite === tomorrow && p.status !== "cumprido").length;
 
   const pieData = [
-    { name: "Ativos", value: ativos || 1, color: "hsl(16, 88%, 54%)" },
+    { name: "Ativos", value: ativos, color: "hsl(16, 88%, 54%)" },
     { name: "Pendentes", value: pendentes || 0, color: "hsl(38, 92%, 50%)" },
     { name: "Concluídos", value: concluidos || 0, color: "hsl(174, 100%, 30%)" },
   ];
