@@ -1,0 +1,33 @@
+{
+  "enableArtifact": false,
+  "disableClaudeAiConnectors": true,
+  "language": "Português",
+  "enabledPlugins": {
+    "data@knowledge-work-plugins": false,
+    "design@knowledge-work-plugins": false,
+    "engineering@knowledge-work-plugins": false,
+    "figma@knowledge-work-plugins": false,
+    "finance@knowledge-work-plugins": false,
+    "legal@knowledge-work-plugins": false,
+    "miro@knowledge-work-plugins": false
+  },
+  "permissions": {
+    "deny": [
+      "Artifact",
+      "ArtifactComments",
+      "ArtifactData",
+      "DesignSync",
+      "mcp__claude_ai_Claude_Docs",
+      "mcp__claude_ai_Vercel",
+      "mcp__claude_ai_Gamma",
+      "mcp__claude_ai_Canva",
+      "mcp__claude_ai_Gmail",
+      "mcp__claude_ai_Google_Drive",
+      "mcp__claude_ai_Google_Calendar"
+    ],
+    "allow": [
+      "mcp__codex__codex",
+      "mcp__antigravity__antigravity"
+    ]
+  }
+}
